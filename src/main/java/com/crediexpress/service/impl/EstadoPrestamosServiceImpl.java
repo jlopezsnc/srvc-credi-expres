@@ -2,6 +2,7 @@ package com.crediexpress.service.impl;
 
 import com.crediexpress.dto.entity.CalculadoraPrestamos;
 import com.crediexpress.dto.entity.Cliente;
+import com.crediexpress.dto.entity.EstadoCuota;
 import com.crediexpress.dto.entity.EstadoPrestamos;
 import com.crediexpress.dto.entity.Modalidad;
 import com.crediexpress.dto.repository.CalculadoraPrestamosRepository;
@@ -9,176 +10,161 @@ import com.crediexpress.dto.repository.ClienteRepository;
 import com.crediexpress.dto.repository.EstadoPrestamosRepository;
 import com.crediexpress.dto.repository.ModalidadRepository;
 import com.crediexpress.dto.view.request.CalculadoraPagosRequest;
+import com.crediexpress.dto.view.response.CalcularPagoResponse;
+import com.crediexpress.dto.view.response.CampoError;
 import com.crediexpress.dto.view.response.ClienteResponse;
 import com.crediexpress.dto.view.response.EstadoPrestamosResponse;
 import com.crediexpress.dto.view.response.ModalidadResponse;
+import com.crediexpress.exception.ApiException;
+import com.crediexpress.service.CalculadoraPrestamo;
+import com.crediexpress.service.CalculadoraPrestamo.Periodicidad;
+import com.crediexpress.service.CalculadoraPrestamo.Plan;
 import com.crediexpress.service.EstadoPrestamosService;
-import com.crediexpress.util.Utils;
+import com.crediexpress.util.Dinero;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
-import java.math.BigDecimal;
-import java.sql.Date;
-import java.util.ArrayList;
-import java.util.Calendar;
+import java.time.Clock;
+import java.time.LocalDate;
 import java.util.List;
+import java.util.stream.Collectors;
 
 @Service
 @Slf4j
+@RequiredArgsConstructor
 public class EstadoPrestamosServiceImpl implements EstadoPrestamosService {
 
-    @Autowired
-    private EstadoPrestamosRepository estadoPrestamosRepository;
+    static final String MENSAJE_GENERADO = "Prestamo generado correctamente";
+    private static final String ALERTA_INICIAL = "VIGENTE";
 
-    @Autowired
-    private ModalidadRepository modalidadRepository;
-
-    @Autowired
-    private CalculadoraPrestamosRepository calculadoraPrestamosRepository;
-
-    @Autowired
-    private ClienteRepository clienteRepository;
-
+    private final EstadoPrestamosRepository estadoPrestamosRepository;
+    private final ModalidadRepository modalidadRepository;
+    private final CalculadoraPrestamosRepository calculadoraPrestamosRepository;
+    private final ClienteRepository clienteRepository;
+    private final Clock clock;
 
     @Override
+    @Transactional(readOnly = true)
     public List<EstadoPrestamosResponse> getEstadosPrestamos() {
-        List<EstadoPrestamosResponse> estadoPrestamosResponses = new ArrayList<>();
-        estadoPrestamosRepository.findAll().forEach(e ->
-                estadoPrestamosResponses.add(getResponse(e)));
-        return estadoPrestamosResponses;
+        return estadoPrestamosRepository.findAll().stream()
+                .map(EstadoPrestamosServiceImpl::getResponse)
+                .toList();
     }
 
     @Override
+    @Transactional(readOnly = true)
     public EstadoPrestamosResponse getEstadoPrestamosById(Integer id) {
-        return estadoPrestamosRepository.findById(id).isPresent() ?
-                getResponse(estadoPrestamosRepository.findById(id).get()) :
-                null;
+        return estadoPrestamosRepository.findById(id)
+                .map(EstadoPrestamosServiceImpl::getResponse)
+                .orElse(null);
     }
 
     @Override
+    @Transactional(readOnly = true)
     public List<EstadoPrestamosResponse> getEstadoPrestamosByIdCliente(Integer id) {
-        List<EstadoPrestamosResponse> estadoPrestamosResponses = new ArrayList<>();
-        estadoPrestamosRepository.findByIdCliente(id).forEach(
-                e -> {
-                    estadoPrestamosResponses.add(getResponse(e));
-                }
-        );
-        return estadoPrestamosResponses;
+        return estadoPrestamosRepository.findByIdCliente(id).stream()
+                .map(EstadoPrestamosServiceImpl::getResponse)
+                .toList();
     }
 
     @Override
-    public String guardarEstadoPrestamos(CalculadoraPagosRequest calculadoraPagosRequest) {
-        log.info("Iniciando proceso de calculadora de pagos.");
-
-        CalculadoraPrestamos calculadoraPrestamos = getSave(calculadoraPagosRequest);
-
-        log.info("Se van a crear " + calculadoraPrestamos.getNumeroCuotas() + " registros de estado prestamo.");
-        Integer diasIncremento = modalidadRepository.getById(calculadoraPagosRequest.getIdModalidad()).getDiasActivos();
-
-        java.util.Date ultimaFechaCalculada = null;
-        java.util.Date utilFechaSolicitud = calculadoraPrestamos.getFechaInicioCredito();
-        for (int i = 1; i <= Utils.BigDecimalToInt(calculadoraPagosRequest.getNumeroCuota()); i++) {
-            //Se calcularán los pagos de acuerdo a la fecha que se envia desde el front
-            //incrementar en dias a partir del segundo registro
-            if (i != 1) {
-                utilFechaSolicitud = agregarDias(ultimaFechaCalculada, diasIncremento);
-                log.info("Incrementando fecha en {} dias", diasIncremento + ". Fecha calculada {} " + utilFechaSolicitud);
-            }
-            calculadoraPagosRequest.setIdCalculadoraPrestamo(calculadoraPrestamos.getIdCalculadoraPrestamo());
-            EstadoPrestamos estadoPrestamos = getEstadoPrestamos(calculadoraPagosRequest, utilFechaSolicitud, i);
-            estadoPrestamosRepository.save(estadoPrestamos);
-            ultimaFechaCalculada = estadoPrestamos.getFechaVencimiento();
+    @Transactional
+    public CalcularPagoResponse guardarEstadoPrestamos(CalculadoraPagosRequest request) {
+        LocalDate hoy = LocalDate.now(clock);
+        Cliente cliente = clienteRepository.findById(request.idCliente())
+                .orElseThrow(() -> ApiException.noEncontrado("El cliente no existe."));
+        Modalidad modalidad = modalidadRepository.findById(request.idModalidad())
+                .orElseThrow(() -> invalido("idModalidad", "La periodicidad no existe."));
+        Periodicidad periodicidad = Periodicidad.deDias(modalidad.getDiasActivos())
+                .orElseThrow(() -> invalido("idModalidad", "Esta periodicidad no está disponible para préstamos."));
+        if (!periodicidad.permite(request.numeroCuota())) {
+            throw invalido("numeroCuota", "Para pagos " + modalidad.getDescripcion().toLowerCase()
+                    + "es elige " + plazosTexto(periodicidad) + " pagos.");
+        }
+        if (request.fechaInicioCredito().isBefore(hoy)) {
+            throw invalido("fechaInicioCredito", "La fecha del primer pago no puede ser anterior a hoy.");
         }
 
-        log.info("Estado prestamo agregado correctamente.");
-        return "Prestamo generado correctamente";
-    }
+        Plan plan = CalculadoraPrestamo.calcular(request.importeCredito(), request.tasaInteres(),
+                request.numeroCuota(), periodicidad, request.fechaInicioCredito());
 
-    private CalculadoraPrestamos getSave(CalculadoraPagosRequest calculadoraPagosRequest) {
-        return calculadoraPrestamosRepository.save(voToDto(calculadoraPagosRequest));
-    }
+        CalculadoraPrestamos prestamo = calculadoraPrestamosRepository.save(CalculadoraPrestamos.builder()
+                .idCliente(cliente)
+                .idModalidad(modalidad)
+                .importeCredito(plan.monto())
+                .tasaInteres(plan.tasaMensual())
+                .numeroCuotas(request.numeroCuota())
+                .importeCuota(plan.importeCuota())
+                .totalPagar(plan.total())
+                .interesGenerado(plan.interes())
+                .fechaSolicitud(hoy)
+                .fechaInicioCredito(request.fechaInicioCredito())
+                .build());
 
-
-    private static EstadoPrestamos getEstadoPrestamos(CalculadoraPagosRequest calculadoraPagosRequest, java.util.Date utilFechaSolicitud, int i) {
-        return EstadoPrestamos.builder()
-                .idCalculadoraPrestamo(CalculadoraPrestamos.builder()
-                        .idCalculadoraPrestamo(calculadoraPagosRequest.getIdCalculadoraPrestamo())
+        List<EstadoPrestamos> cuotas = plan.cuotas().stream()
+                .map(cuota -> EstadoPrestamos.builder()
+                        .idCalculadoraPrestamo(prestamo)
+                        .idCliente(cliente)
+                        .numeroCuota(cuota.numero())
+                        .fechaVencimiento(cuota.fechaVencimiento())
+                        .importeCuota(cuota.importe())
+                        .estadoPago(EstadoCuota.PENDIENTE.codigo())
+                        .diasMoratorios(0)
+                        .alerta(ALERTA_INICIAL)
                         .build())
-                //.estadoPago(calculadoraPagosRequest.getEstadoPago())
-                .fechaVencimiento(new Date(utilFechaSolicitud.getTime()))
-                //.diasMoratorios("")
-                .alerta("VIGENTE")
-                .idCliente(Cliente.builder().idCliente(calculadoraPagosRequest.getIdCliente()).build())
-                .numeroCuota(new BigDecimal(i))
-                .importeCuota(calculadoraPagosRequest.getImporteCuota())
+                .toList();
+        estadoPrestamosRepository.saveAll(cuotas);
+
+        log.info("Préstamo {} generado: cliente {}, {} cuotas, total {}", prestamo.getIdCalculadoraPrestamo(),
+                cliente.getIdCliente(), cuotas.size(), plan.total());
+
+        return CalcularPagoResponse.builder()
+                .plazosGenerados(cuotas.size())
+                .resultado(MENSAJE_GENERADO)
+                .idPrestamo(prestamo.getIdCalculadoraPrestamo())
+                .interesGenerado(plan.interes())
+                .totalPagar(plan.total())
+                .importeCuota(plan.importeCuota())
+                .importeUltimaCuota(plan.cuotas().getLast().importe())
                 .build();
     }
 
+    private static ApiException invalido(String campo, String mensaje) {
+        return ApiException.datosInvalidos("Revisa los datos del préstamo.", List.of(new CampoError(campo, mensaje)));
+    }
+
+    /** [8, 10, 12, 14] → "8, 10, 12 o 14". */
+    private static String plazosTexto(Periodicidad periodicidad) {
+        List<String> plazos = periodicidad.plazosPermitidos().stream().map(String::valueOf).toList();
+        if (plazos.size() == 1) {
+            return plazos.getFirst();
+        }
+        return plazos.subList(0, plazos.size() - 1).stream().collect(Collectors.joining(", "))
+                + " o " + plazos.getLast();
+    }
+
     private static EstadoPrestamosResponse getResponse(EstadoPrestamos estadoPrestamos) {
+        CalculadoraPrestamos prestamo = estadoPrestamos.getIdCalculadoraPrestamo();
         return EstadoPrestamosResponse.builder()
-                .estadoPago(estadoPrestamos.getEstadoPago())
                 .id(estadoPrestamos.getId())
                 .modalidadResponse(ModalidadResponse.builder()
-                        .idModalidad(estadoPrestamos.getIdCalculadoraPrestamo().getIdModalidad().getIdModalidad())
-                        .descripcion(estadoPrestamos.getIdCalculadoraPrestamo().getIdModalidad().getDescripcion())
+                        .idModalidad(prestamo.getIdModalidad().getIdModalidad())
+                        .descripcion(prestamo.getIdModalidad().getDescripcion())
                         .build())
-                .clienteResponse(ClienteResponse.builder().idCliente(estadoPrestamos.getIdCliente().getIdCliente())
-                        .nombreCompleto(estadoPrestamos.getIdCliente().getNombreCompleto()).build())
-                .idCalculadoraPrestamo(estadoPrestamos.getIdCalculadoraPrestamo().getIdCalculadoraPrestamo())
+                .clienteResponse(ClienteResponse.builder()
+                        .idCliente(estadoPrestamos.getIdCliente().getIdCliente())
+                        .nombreCompleto(estadoPrestamos.getIdCliente().getNombreCompleto())
+                        .build())
+                .idCalculadoraPrestamo(prestamo.getIdCalculadoraPrestamo())
                 .diasMoratorios(estadoPrestamos.getDiasMoratorios())
                 .estadoPago(estadoPrestamos.getEstadoPago())
                 .numeroCuota(estadoPrestamos.getNumeroCuota())
                 .alerta(estadoPrestamos.getAlerta())
                 .fechaPago(estadoPrestamos.getFechaPago())
                 .fechaVencimiento(estadoPrestamos.getFechaVencimiento())
-                .importeCuota(estadoPrestamos.getImporteCuota())
+                .importeCuota(Dinero.de(estadoPrestamos.getImporteCuota()))
                 .build();
-    }
-
-    private EstadoPrestamos guardarEstadoPrestamo(CalculadoraPagosRequest estadoPrestamosRequest) {
-        EstadoPrestamos estadoPrestamos = EstadoPrestamos.builder()
-                .estadoPago(estadoPrestamosRequest.getEstadoPago())
-                .alerta(estadoPrestamosRequest.getAlerta())
-                .diasMoratorios(estadoPrestamosRequest.getDiasMoratorios())
-                .idCalculadoraPrestamo(CalculadoraPrestamos.builder()
-                        .idModalidad(Modalidad.builder().idModalidad(estadoPrestamosRequest.getIdModalidad()).build())
-                        .build())
-                .fechaPago(new Date(estadoPrestamosRequest.getFechaPago().getTime()))
-                .idCalculadoraPrestamo(CalculadoraPrestamos.builder()
-                        .idCalculadoraPrestamo(estadoPrestamosRequest.getId()).build())
-                .estadoPago(estadoPrestamosRequest.getIdCalculadoraPrestamo())
-                .fechaVencimiento(new Date(estadoPrestamosRequest.getFechaVencimiento().getTime()))
-                .idCliente(Cliente.builder().idCliente(estadoPrestamosRequest.getIdCliente()).build())
-                .importeCuota(estadoPrestamosRequest.getImporteCuota())
-                .numeroCuota(estadoPrestamosRequest.getNumeroCuota())
-                .build();
-        return estadoPrestamosRepository.save(estadoPrestamos);
-    }
-
-    private CalculadoraPagosRequest dtoToVo(CalculadoraPrestamos calculadoraPrestamos) {
-    return null;
-    }
-
-    private CalculadoraPrestamos voToDto(CalculadoraPagosRequest calculadoraPagosRequest) {
-        return CalculadoraPrestamos.builder()
-                .fechaInicioCredito(new Date(calculadoraPagosRequest.getFechaInicioCredito().getTime()))
-                .fechaSolicitud(new Date(calculadoraPagosRequest.getFechaGeneracionOperacion().getTime()))
-                .interesGenerado(BigDecimal.valueOf(calculadoraPagosRequest.getInteresGenerado()))
-                .totalPagar(BigDecimal.valueOf(calculadoraPagosRequest.getTotalPagar()))
-                .importeCuota(calculadoraPagosRequest.getImporteCuota())
-                .numeroCuotas(Integer.valueOf(calculadoraPagosRequest.getNumeroCuota().toString()))
-                .tasaInteres(BigDecimal.valueOf(calculadoraPagosRequest.getTasaInteres()))
-                .idModalidad(Modalidad.builder().idModalidad(calculadoraPagosRequest.getIdModalidad()).build())
-                .importeCredito(BigDecimal.valueOf(calculadoraPagosRequest.getImporteCredito()))
-                .idCliente(Cliente.builder().idCliente(calculadoraPagosRequest.getIdCliente()).build())
-                .build();
-    }
-
-    private java.util.Date agregarDias(java.util.Date fecha, int diasAgregar) {
-        Calendar calendar = Calendar.getInstance();
-        calendar.setTime(fecha);
-        calendar.add(Calendar.DATE, diasAgregar);
-        return calendar.getTime();
     }
 }

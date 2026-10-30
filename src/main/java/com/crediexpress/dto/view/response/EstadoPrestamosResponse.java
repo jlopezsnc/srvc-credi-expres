@@ -8,7 +8,7 @@ import lombok.NoArgsConstructor;
 import lombok.ToString;
 
 import java.math.BigDecimal;
-import java.sql.Date;
+import java.time.LocalDate;
 
 @Builder
 @AllArgsConstructor
@@ -20,10 +20,10 @@ public class EstadoPrestamosResponse {
     private Integer id;
     private ClienteResponse clienteResponse;
     private ModalidadResponse modalidadResponse;
-    private BigDecimal numeroCuota;
-    private Date fechaVencimiento;
+    private Integer numeroCuota;
+    private LocalDate fechaVencimiento;
     private BigDecimal importeCuota;
-    private Date fechaPago;
+    private LocalDate fechaPago;
     private Integer estadoPago;
     private Integer diasMoratorios;
     private String alerta;

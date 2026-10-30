@@ -8,8 +8,6 @@ import jakarta.persistence.Entity;
 import jakarta.persistence.Table;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.JoinColumn;
-import jakarta.persistence.OneToOne;
-import jakarta.persistence.CascadeType;
 import lombok.Getter;
 import lombok.Setter;
 import lombok.Builder;
@@ -17,8 +15,10 @@ import lombok.NoArgsConstructor;
 import lombok.AllArgsConstructor;
 
 import java.math.BigDecimal;
-import java.sql.Date;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
 
+/** Encabezado del préstamo. Los importes son columnas FLOAT: normalizar con {@code Dinero.de}. */
 @Entity
 @Table(name = "calculadora_prestamos")
 @Getter
@@ -40,10 +40,12 @@ public class CalculadoraPrestamos {
     @Column(name = "importe_credito")
     private BigDecimal importeCredito;
 
-    @OneToOne
+    // Muchos préstamos comparten la misma modalidad.
+    @ManyToOne
     @JoinColumn(name = "id_modalidad", referencedColumnName = "id_modalidad")
     private Modalidad idModalidad;
 
+    /** Interés mensual en porcentaje. */
     @Column(name = "tasa_interes")
     private BigDecimal tasaInteres;
 
@@ -56,14 +58,15 @@ public class CalculadoraPrestamos {
     @Column(name = "total_pagar")
     private BigDecimal totalPagar;
 
-    @Column(name = "fecha")
-    private Date fecha;
+    /** La pone la base (DEFAULT CURRENT_TIMESTAMP); Hibernate no la envía. */
+    @Column(name = "fecha", insertable = false, updatable = false)
+    private LocalDateTime fecha;
 
     @Column(name = "fecha_solicitud")
-    private Date fechaSolicitud;
+    private LocalDate fechaSolicitud;
 
     @Column(name = "fecha_inicio_credito")
-    private Date fechaInicioCredito;
+    private LocalDate fechaInicioCredito;
 
     @Column(name = "interes_generado")
     private BigDecimal interesGenerado;

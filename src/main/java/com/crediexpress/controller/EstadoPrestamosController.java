@@ -5,6 +5,7 @@ import com.crediexpress.dto.view.response.CalcularPagoResponse;
 import com.crediexpress.dto.view.response.EstadoPrestamosResponse;
 import com.crediexpress.dto.view.response.GenericResponse;
 import com.crediexpress.service.EstadoPrestamosService;
+import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -15,7 +16,6 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.PathVariable;
 
 import java.util.List;
-import java.util.Objects;
 
 
 @RestController
@@ -45,22 +45,17 @@ public class EstadoPrestamosController {
         return ResponseEntity.status(HttpStatus.OK).body(estadoPrestamosResponses);
     }
 
+    /** Genera el préstamo y su calendario. El back calcula interés, total y cuotas (no los recibe). */
     @PostMapping(path = "/calcular-pagos", produces = "application/json")
     public ResponseEntity<GenericResponse> guardarEstadoPrestamo(
-            @RequestBody CalculadoraPagosRequest calculadoraPagosRequest) {
-        if (Objects.isNull(calculadoraPagosRequest)) {
-            return ResponseEntity.badRequest().build();
-        }
-        String estadoProceso = estadoPrestamosService.guardarEstadoPrestamos(calculadoraPagosRequest);
+            @Valid @RequestBody CalculadoraPagosRequest calculadoraPagosRequest) {
+        CalcularPagoResponse generado = estadoPrestamosService.guardarEstadoPrestamos(calculadoraPagosRequest);
         return ResponseEntity.ok(
                 GenericResponse.builder()
-                                .objetoResponse(CalcularPagoResponse.builder().plazosGenerados(calculadoraPagosRequest.getNumeroCuota().intValue())
-                        .resultado(estadoProceso)
-                        .build())
+                        .objetoResponse(generado)
                         .httpStatus(HttpStatus.OK)
-                        .mensaje("Prestamo generado correctamente")
+                        .mensaje(generado.getResultado())
                         .build());
-
     }
 
 }

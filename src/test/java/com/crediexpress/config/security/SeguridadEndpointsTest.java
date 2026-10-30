@@ -3,6 +3,7 @@ package com.crediexpress.config.security;
 import com.crediexpress.backEndServices_credi_express.BackEndServicesCrediExpressApplication;
 import com.crediexpress.controller.ClienteController;
 import com.crediexpress.controller.EstadoPrestamosController;
+import com.crediexpress.dto.view.response.CalcularPagoResponse;
 import com.crediexpress.dto.view.response.ClienteResponse;
 import com.crediexpress.service.ClienteService;
 import com.crediexpress.service.EstadoPrestamosService;
@@ -40,7 +41,11 @@ class SeguridadEndpointsTest {
     private static final String AGREGAR_CLIENTE = "/operaciones-cliente/cliente-agregar";
     private static final String GENERAR_PRESTAMO = "/operaciones-prestamos/calcular-pagos";
     private static final String CLIENTE_JSON = "{\"nombreCompleto\":\"Cliente Prueba\"}";
-    private static final String PRESTAMO_JSON = "{\"numeroCuota\":12}";
+    // Mismo cuerpo que envía la pantalla "Nuevo préstamo" (los montos calculados se ignoran).
+    private static final String PRESTAMO_JSON = """
+            {"idCliente":"1","idModalidad":"2","numeroCuota":"8","importeCredito":"6000.00",
+             "tasaInteres":"12","fechaInicioCredito":"2099-01-15","totalPagar":"8880.00"}
+            """;
 
     @Autowired
     private MockMvc mockMvc;
@@ -99,7 +104,8 @@ class SeguridadEndpointsTest {
 
     @Test
     void conTokenPuedeGenerarPrestamos() throws Exception {
-        when(estadoPrestamosService.guardarEstadoPrestamos(any())).thenReturn("OK");
+        when(estadoPrestamosService.guardarEstadoPrestamos(any()))
+                .thenReturn(CalcularPagoResponse.builder().plazosGenerados(8).resultado("OK").build());
 
         mockMvc.perform(post(GENERAR_PRESTAMO).with(jwt())
                         .contentType(MediaType.APPLICATION_JSON).content(PRESTAMO_JSON))
