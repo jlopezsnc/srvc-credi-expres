@@ -1,0 +1,17 @@
+apiVersion: cloud.google.com/v1
+kind: BackendConfig
+metadata:
+  name: crediexpress-back
+spec:
+  # Política creada por deploy/preparar-gcp.ps1: límite de peticiones por IP y reglas OWASP.
+  securityPolicy:
+    name: crediexpress-armor
+  timeoutSec: 30
+  connectionDraining:
+    drainingTimeoutSec: 30
+  healthCheck:
+    type: HTTP
+    requestPath: /actuator/health/readiness
+    port: 8081
+    checkIntervalSec: 15
+    timeoutSec: 5

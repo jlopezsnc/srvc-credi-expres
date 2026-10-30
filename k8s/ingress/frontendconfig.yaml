@@ -1,0 +1,9 @@
+# HTTP -> HTTPS y TLS 1.2 como mínimo (política SSL creada por deploy/preparar-gcp.ps1).
+apiVersion: networking.gke.io/v1beta1
+kind: FrontendConfig
+metadata:
+  name: crediexpress
+spec:
+  redirectToHttps:
+    enabled: true
+  sslPolicy: crediexpress-ssl

@@ -1,0 +1,7 @@
+# Copiar como config/application-local.properties (ignorado por git) y completar.
+# Solo se usa en el perfil dev (IntelliJ o ./gradlew bootRun).
+DB_PASSWORD=
+FIREBASE_PROJECT_ID=
+# Opcionales (estos son los valores por defecto):
+# DB_URL=jdbc:mysql://localhost:3306/prestamos
+# DB_USERNAME=root

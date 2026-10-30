@@ -1,0 +1,32 @@
+# Ingress COMPARTIDO por back y front (un solo dominio y un solo certificado, sin CORS).
+# Lo aplica deploy/deploy-back.ps1. El front debe estar desplegado para que /* responda.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: crediexpress
+  labels:
+    app.kubernetes.io/part-of: crediexpress
+  annotations:
+    kubernetes.io/ingress.class: gce
+    kubernetes.io/ingress.global-static-ip-name: crediexpress-ip
+    networking.gke.io/managed-certificates: crediexpress-cert
+    networking.gke.io/v1beta1.FrontendConfig: crediexpress
+spec:
+  rules:
+    - host: __DOMINIO__
+      http:
+        paths:
+          - path: /api
+            pathType: Prefix
+            backend:
+              service:
+                name: crediexpress-back
+                port:
+                  number: 80
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: crediexpress-front
+                port:
+                  number: 80

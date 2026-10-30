@@ -1,0 +1,14 @@
+# Configuración SIN secretos. La contraseña de la base llega de Secret Manager (secretproviderclass.yaml).
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: crediexpress-back
+  labels:
+    app.kubernetes.io/name: crediexpress-back
+    app.kubernetes.io/part-of: crediexpress
+data:
+  SPRING_PROFILES_ACTIVE: prod
+  FIREBASE_PROJECT_ID: __FIREBASE_PROJECT_ID__
+  # El sidecar Cloud SQL Auth Proxy expone la base en localhost dentro del pod (conexión cifrada).
+  DB_URL: jdbc:mysql://127.0.0.1:3306/__BASE_DATOS__
+  DB_USERNAME: __USUARIO_BD__

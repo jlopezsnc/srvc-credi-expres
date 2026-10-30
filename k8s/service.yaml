@@ -1,0 +1,20 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: crediexpress-back
+  labels:
+    app.kubernetes.io/name: crediexpress-back
+    app.kubernetes.io/part-of: crediexpress
+  annotations:
+    # NEG: el balanceador llega directo a los pods. BackendConfig: Cloud Armor + health check.
+    cloud.google.com/neg: '{"ingress": true}'
+    cloud.google.com/backend-config: '{"default": "crediexpress-back"}'
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: crediexpress-back
+  # Solo el puerto de la API. El 8081 (actuator) no se publica en el Service.
+  ports:
+    - name: http
+      port: 80
+      targetPort: http

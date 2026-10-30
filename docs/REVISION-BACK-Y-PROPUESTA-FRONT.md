@@ -1,6 +1,6 @@
 # srvc-credi-express: revisión del back y propuesta de front
 
-> Fecha: 2026-10-22. Estado del proyecto: en desarrollo (back parcial, front inexistente).
+> Fecha: 2026-10-22 (actualizado el 2026-10-28: la seguridad queda solo con token, sin roles; ver 1.4). Estado del proyecto: en desarrollo (back parcial, front inexistente).
 > Este documento es una guía de mejoras, no una lista de errores definitivos.
 >
 > **Contexto:** proyecto independiente para un **emprendimiento** (no pertenece a una empresa grande ni usa herramientas corporativas). Aun así manejará **dinero y datos personales reales de clientes**, así que la seguridad no es opcional. Se despliega **manualmente** (sin integración git → GCP ni CI/CD) en **GKE**, dentro de contenedores, con **Java 21**. No se usan herramientas de escaneo ni de análisis externas (Sonar, Black Duck, Snyk, Dependency-Check, etc.), pero **sí** se exigen seguridad y buenas prácticas de nivel senior.
@@ -14,7 +14,7 @@
 - [ ] **Contraseña en el código:** `application.properties` tiene `root` / `masterkey`. No subirla al repo. Usar variables de entorno (`${DB_PASSWORD}`) y, en GCP, **Secret Manager**.
 - [ ] **El `.gitignore` del primer commit ignora `src/`.** La versión modificada ya lo corrige, así que hay que hacerle commit.
 - [ ] **`install.cmd` sobra en el repo:** es el instalador de Claude Code. Borrarlo o agregarlo al `.gitignore`.
-- [ ] **La API no tiene autenticación** y expone CURP, teléfono y domicilio. Son datos personales protegidos por la LFPDPPP. Agregar Spring Security con JWT, o Firebase Auth / Identity Platform en GCP.
+- [x] **La API no tenía autenticación** y expone CURP, teléfono y domicilio (datos personales protegidos por la LFPDPPP). Ya se agregó Spring Security como OAuth2 Resource Server que valida el ID token de Firebase. Sin roles: ver 1.4.
 
 ### 1.2 Errores de lógica
 
@@ -46,6 +46,25 @@
 - [ ] `EstadoPrestamosServiceImpl.guardarEstadoPrestamo` (privado) no se usa, asigna `estadoPago` dos veces y la segunda con el valor equivocado.
 - [ ] `EstadoPrestamosServiceImpl.dtoToVo` devuelve `null`.
 - [ ] `ModalidadService` está vacío.
+
+### 1.4 Seguridad: solo token, sin roles (decisión del 2026-10-28)
+
+**Decisión:** el back solo exige un ID token de Firebase válido (firma, emisor, audiencia y expiración). No hay roles (`ADMIN`, `CAJERO`, `COBRADOR`) ni `@PreAuthorize`: **cualquier usuario autenticado puede hacer todo.** Es razonable para un emprendimiento con pocos usuarios de confianza y uso de 4 o 5 veces al mes.
+
+**Consecuencia que hay que cubrir:** si cualquier usuario autenticado tiene acceso total, entonces **quien logre crear una cuenta en el proyecto de Firebase tendrá acceso a todo**. La API key de Firebase es pública (va en el front), así que alguien podría registrarse llamando directo a la API de Firebase, aunque el front no tenga pantalla de registro. Antes de salir a producción:
+
+- [ ] **Desactivar el registro de usuarios** en Firebase (*Authentication > Configuración > Acciones del usuario > crear cuenta*; si esa opción pide pasar a Identity Platform, su capa gratuita alcanza para este volumen). Los usuarios se crean a mano desde la consola.
+- [ ] **Lista blanca en el back** como segunda barrera: una propiedad `seguridad.usuarios-permitidos` (UIDs de Firebase, en variable de entorno) y un validador de JWT que rechace con 401/403 cualquier `sub` que no esté en la lista. No es un rol: solo responde "¿este usuario es del negocio?".
+- [ ] Exigir `email_verified = true` si el login es con correo y contraseña.
+- [ ] **Auditoría:** guardar el UID (`sub` del token) en quién crea clientes, préstamos y pagos. Sin roles, la auditoría es la forma de saber quién hizo qué.
+
+**Limpieza del código de roles** (hecha el 2026-10-30):
+
+- [x] `SeguridadEndpointsTest` reescrito: sin token → 401, token malformado → 401, token válido → 200 en consultar clientes, agregar cliente y generar préstamo.
+- [x] Borrados `FirebaseRolesConverter`, `FirebaseRolesConverterTest`, el enum `Rol` y `deploy/asignar-rol.ps1`. `SecurityConfig` usa `.jwt(Customizer.withDefaults())`; el nombre del usuario sigue siendo el UID (`sub`).
+- [x] Quitados `@EnableMethodSecurity`, los `//@PreAuthorize(...)` comentados y sus imports.
+- [x] `docs/DESPLIEGUE-GCP.md` actualizado.
+- [ ] Pendiente: test de token con audiencia o emisor ajeno → 401 (requiere firmar tokens de prueba con una llave local) y, cuando exista la lista blanca, UID no permitido → rechazado.
 
 ---
 
@@ -186,7 +205,7 @@ Contexto supuesto: financiera pequeña en México con cobranza diaria o semanal 
 
 ### 4.2 Pantallas
 
-1. **Login** con roles: admin, cajero y cobrador.
+1. **Login** con Firebase Auth. Sin roles: todos los usuarios ven todas las pantallas, y no hay pantalla de registro.
 2. **Dashboard:**
    - Cartera activa, cobros de hoy, cuotas vencidas y porcentaje de morosidad.
    - Gráfica de lo cobrado contra lo esperado por semana.
@@ -236,11 +255,11 @@ Referencias: **OWASP API Security Top 10 (2023)**, **OWASP Top 10** (web), **OWA
 
 | Riesgo (API Top 10) | Medida en credi-express |
 |---|---|
-| API1: autorización a nivel de objeto (BOLA) | Validar en el **service** que el usuario tenga permiso sobre ese cliente o préstamo, no solo que esté autenticado. Usar UUID públicos en lugar de IDs secuenciales en las URLs. |
-| API2: autenticación rota | Spring Security con OAuth2 Resource Server y JWT (Firebase Auth / Identity Platform). Tokens de vida corta. Nada de sesiones caseras. |
+| API1: autorización a nivel de objeto (BOLA) | Sin roles, todos los usuarios del negocio ven todos los clientes y préstamos (decisión 1.4). Aun así, usar UUID públicos en lugar de IDs secuenciales en las URLs. |
+| API2: autenticación rota | Spring Security con OAuth2 Resource Server validando el ID token de Firebase (firma, emisor, audiencia y expiración). Registro de usuarios desactivado y lista blanca de UIDs en el back (1.4). Nada de sesiones caseras. |
 | API3: autorización a nivel de propiedad | DTOs de entrada y salida separados de las entidades: nunca exponer ni recibir entidades JPA. Exponer la CURP enmascarada cuando no haga falta completa. |
 | API4: consumo de recursos sin límite | Paginación obligatoria con tamaño máximo. Límites de tamaño en los requests. Rate limiting (Cloud Armor o Bucket4j). Límite de número de cuotas y de monto. |
-| API5: autorización a nivel de función | Roles (`ADMIN`, `CAJERO`, `COBRADOR`) con `@PreAuthorize` en cada operación sensible. Denegar por defecto. |
+| API5: autorización a nivel de función | No se usan roles (decisión 1.4). Denegar por defecto: todo endpoint exige token salvo `/actuator/health`. Si el negocio crece y entra personal con distintos permisos, reabrir esta decisión. |
 | API6: flujos de negocio sensibles | Evitar préstamos o pagos duplicados con una idempotency key en `POST /prestamos` y `POST /pagos`. Auditar quién crea, paga y cancela. |
 | API8: mala configuración | CORS solo para el dominio del front. Headers de seguridad. Sin stack traces en las respuestas. Actuator expuesto solo en `/health`. `show-sql` apagado en prod. |
 | API9: inventario de APIs | Versionar (`/api/v1`). OpenAPI siempre actualizado. Swagger deshabilitado o protegido en prod. |
@@ -295,7 +314,7 @@ Referencias: **OWASP API Security Top 10 (2023)**, **OWASP Top 10** (web), **OWA
 
 - [ ] Cumple SOLID (responsabilidad única, depende de interfaces, inyección por constructor).
 - [ ] Toda la entrada está validada y los errores salen con el formato estándar.
-- [ ] Revisa autorización (rol y dueño del recurso) y no expone datos de más.
+- [ ] El endpoint exige token (no queda abierto por error) y no expone datos de más.
 - [ ] No hay secretos ni datos personales en el código ni en los logs.
 - [ ] Tiene pruebas unitarias y de integración que pasan.
 - [ ] `./gradlew build` (con tests) pasa en local antes de construir la imagen.
@@ -311,7 +330,7 @@ Referencias: **OWASP API Security Top 10 (2023)**, **OWASP Top 10** (web), **OWA
 3. Cambiar el dinero a `BigDecimal`, las fechas a `LocalDate` y los DTOs a `record`. Pasar el cálculo al back (calculador de amortización con estrategias por modalidad) con el endpoint `/simular`.
 4. Agregar `@Transactional`, Bean Validation, excepciones de dominio y el manejador global de errores.
 5. Agregar Flyway y springdoc-openapi.
-6. Agregar Spring Security (JWT y roles), CORS, headers de seguridad y auditoría, **antes** de exponer más endpoints.
+6. Seguridad, **antes** de exponer más endpoints: la validación del token de Firebase ya está. Falta la limpieza de roles y la lista blanca de 1.4, además de CORS, headers de seguridad y auditoría.
 7. Crear los endpoints faltantes (modalidades, detalle de cliente, registro de pagos con idempotencia, dashboard), cada uno con sus pruebas.
 8. Crear el esqueleto del front: login, clientes y nuevo préstamo.
 9. Contenerizar: Dockerfile del back (Java 21) y del front (nginx), manifiestos en `k8s/` y script de despliegue en `deploy/`.
