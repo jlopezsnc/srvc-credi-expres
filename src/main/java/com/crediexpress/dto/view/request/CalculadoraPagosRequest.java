@@ -14,6 +14,7 @@ import java.time.LocalDate;
  * {@code importeCuota}, {@code totalPagar}, {@code interesGenerado}, {@code estadoPago},
  * {@code alerta} u otros campos, se ignoran.
  */
+@MensajeValidacion("Revisa los datos del préstamo.")
 public record CalculadoraPagosRequest(
         @NotNull(message = "Selecciona el cliente.")
         Integer idCliente,

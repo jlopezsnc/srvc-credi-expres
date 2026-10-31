@@ -1,5 +1,8 @@
 package com.crediexpress.dto.entity;
 
+import java.util.Arrays;
+import java.util.List;
+
 /**
  * Valores de {@code estado_pago} acordados el 2026-10-30. "Vencida" no se guarda: es una cuota
  * pendiente o con abono cuya fecha de vencimiento ya pasó. Un {@code NULL} en la base se lee como
@@ -10,6 +13,8 @@ public enum EstadoCuota {
     ABONO_PARCIAL(2),
     PAGADA(3);
 
+    private static final List<Integer> CODIGOS_CON_SALDO = List.of(PENDIENTE.codigo, ABONO_PARCIAL.codigo);
+
     private final int codigo;
 
     EstadoCuota(int codigo) {
@@ -18,5 +23,20 @@ public enum EstadoCuota {
 
     public int codigo() {
         return codigo;
+    }
+
+    public static EstadoCuota deCodigo(Integer codigo) {
+        if (codigo == null) {
+            return PENDIENTE;
+        }
+        return Arrays.stream(values())
+                .filter(estado -> estado.codigo == codigo)
+                .findFirst()
+                .orElseThrow(() -> new IllegalStateException("estado_pago desconocido: " + codigo));
+    }
+
+    /** Códigos de las cuotas que todavía deben algo (además de {@code NULL}). Para las consultas. */
+    public static List<Integer> codigosConSaldo() {
+        return CODIGOS_CON_SALDO;
     }
 }
