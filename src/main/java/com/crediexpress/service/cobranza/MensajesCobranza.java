@@ -7,6 +7,12 @@ public final class MensajesCobranza {
     public static final String CUOTA_PAGADA = "Esta cuota ya está pagada.";
     public static final String PRESTAMO_NO_EXISTE = "El préstamo no existe.";
     public static final String PRESTAMO_LIQUIDADO = "El préstamo ya está liquidado.";
+    public static final String PRESTAMO_EN_CONVENIO =
+            "El préstamo está en convenio: cobra en el préstamo que generó el convenio.";
+    public static final String PRESTAMO_CANCELADO =
+            "El préstamo se canceló junto con su convenio; ya no se cobra.";
+    public static final String PAGO_EN_CONVENIO =
+            "No se puede cancelar: el préstamo de este pago ya está en convenio.";
     public static final String PAGO_NO_EXISTE = "El pago no existe.";
     public static final String PAGO_YA_CANCELADO = "Este pago ya estaba cancelado.";
     public static final String SOLO_CANCELAR_HOY = "Solo se pueden cancelar pagos registrados hoy.";

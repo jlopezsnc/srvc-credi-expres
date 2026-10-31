@@ -37,12 +37,14 @@ public class PrestamoConsultaController {
             @RequestParam(defaultValue = "ACTIVOS") FiltroPrestamos filtro,
             @RequestParam(required = false) @Size(max = 100, message = "La búsqueda admite hasta 100 caracteres.")
             String busqueda,
+            @RequestParam(required = false) Integer idCliente,
             @RequestParam(defaultValue = "PROXIMO_PAGO") OrdenPrestamos orden,
             @RequestParam(defaultValue = "ASC") Direccion direccion,
             @RequestParam(defaultValue = "0") @Min(value = 0, message = "La página no puede ser negativa.") int pagina,
             @RequestParam(defaultValue = "10") @Min(value = 1, message = MENSAJE_TAMANO)
             @Max(value = 100, message = MENSAJE_TAMANO) int tamano) {
-        PaginaPrestamosResponse respuesta = consultaService.listar(filtro, busqueda, orden, direccion, pagina, tamano);
+        PaginaPrestamosResponse respuesta = consultaService.listar(filtro, busqueda, idCliente, orden, direccion,
+                pagina, tamano);
         return ok(respuesta, respuesta.totalElementos() + " registros encontrados.");
     }
 

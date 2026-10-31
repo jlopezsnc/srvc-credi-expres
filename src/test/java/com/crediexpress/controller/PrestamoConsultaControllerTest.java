@@ -53,10 +53,11 @@ class PrestamoConsultaControllerTest {
         PrestamoResumenResponse prestamo = new PrestamoResumenResponse(12,
                 new ClienteResumenResponse(2, "CLIENTE DE PRUEBA", null), new ModalidadResumenResponse(2, "Quincenal"),
                 8, 3, 1, new BigDecimal("1110.00"), new BigDecimal("8880.00"), new BigDecimal("5150.00"),
-                LocalDate.of(2026, 10, 25), 4, SituacionPrestamo.CON_ATRASO);
-        when(consultaService.listar(FiltroPrestamos.ACTIVOS, null, OrdenPrestamos.PROXIMO_PAGO, Direccion.ASC, 0, 10))
+                LocalDate.of(2026, 10, 25), 4, SituacionPrestamo.CON_ATRASO, null, null);
+        when(consultaService.listar(FiltroPrestamos.ACTIVOS, null, null, OrdenPrestamos.PROXIMO_PAGO, Direccion.ASC,
+                0, 10))
                 .thenReturn(PaginaPrestamosResponse.de(List.of(prestamo), 0, 10, 1,
-                        new PaginaPrestamosResponse.Contadores(1, 1, 0, 1)));
+                        new PaginaPrestamosResponse.Contadores(1, 0, 1, 0, 0, 0, 1)));
 
         mockMvc.perform(get(BASE).with(jwt()))
                 .andExpect(status().isOk())
@@ -70,16 +71,16 @@ class PrestamoConsultaControllerTest {
 
     @Test
     void pasaFiltroOrdenYPagina() throws Exception {
-        when(consultaService.listar(FiltroPrestamos.LIQUIDADOS, "ana", OrdenPrestamos.SALDO, Direccion.DESC, 2, 10))
+        when(consultaService.listar(FiltroPrestamos.LIQUIDADOS, "ana", 7, OrdenPrestamos.SALDO, Direccion.DESC, 2, 10))
                 .thenReturn(PaginaPrestamosResponse.de(List.of(), 2, 10, 0,
-                        new PaginaPrestamosResponse.Contadores(0, 0, 0, 0)));
+                        new PaginaPrestamosResponse.Contadores(0, 0, 0, 0, 0, 0, 0)));
 
-        mockMvc.perform(get(BASE).param("filtro", "LIQUIDADOS").param("busqueda", "ana")
+        mockMvc.perform(get(BASE).param("filtro", "LIQUIDADOS").param("busqueda", "ana").param("idCliente", "7")
                         .param("orden", "SALDO").param("direccion", "DESC").param("pagina", "2").param("tamano", "10")
                         .with(jwt()))
                 .andExpect(status().isOk());
 
-        verify(consultaService).listar(FiltroPrestamos.LIQUIDADOS, "ana", OrdenPrestamos.SALDO, Direccion.DESC, 2, 10);
+        verify(consultaService).listar(FiltroPrestamos.LIQUIDADOS, "ana", 7, OrdenPrestamos.SALDO, Direccion.DESC, 2, 10);
     }
 
     @Test

@@ -73,6 +73,16 @@ public interface PagoRepository extends JpaRepository<Pago, Integer>, JpaSpecifi
                                  @Param("desde") Instant desde,
                                  @Param("hasta") Instant hasta);
 
+    /** Operaciones (folios distintos) del préstamo con ese estatus. */
+    @Query("""
+            SELECT COUNT(DISTINCT p.folio) FROM Pago p
+            WHERE p.prestamo.idCalculadoraPrestamo = :idPrestamo AND p.estatus = :estatus""")
+    long contarOperacionesDelPrestamo(@Param("idPrestamo") Integer idPrestamo, @Param("estatus") EstatusPago estatus);
+
+    default long contarPagosVigentesDelPrestamo(Integer idPrestamo) {
+        return contarOperacionesDelPrestamo(idPrestamo, EstatusPago.VIGENTE);
+    }
+
     default List<AbonoCuota> sumarVigentesPorCuota(Collection<Integer> idsCuota) {
         return sumarPorCuota(idsCuota, EstatusPago.VIGENTE);
     }

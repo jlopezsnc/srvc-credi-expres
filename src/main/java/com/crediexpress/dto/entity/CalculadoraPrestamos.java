@@ -18,7 +18,7 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 
-/** Encabezado del préstamo. Los importes son columnas FLOAT: normalizar con {@code Dinero.de}. */
+/** Encabezado del préstamo. Los importes son {@code DECIMAL(12,2)} desde V6 (antes FLOAT). */
 @Entity
 @Table(name = "calculadora_prestamos")
 @Getter

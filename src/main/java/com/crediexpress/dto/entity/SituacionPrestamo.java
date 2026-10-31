@@ -9,7 +9,11 @@ import java.math.BigDecimal;
 public enum SituacionPrestamo {
     AL_CORRIENTE,
     CON_ATRASO,
-    LIQUIDADO;
+    LIQUIDADO,
+    /** Su saldo pasó a un convenio (alguna cuota con {@code estado_pago = 4}). */
+    EN_CONVENIO,
+    /** Préstamo de un convenio cancelado (sus cuotas con {@code estado_pago = 5}). */
+    CANCELADO;
 
     /**
      * @param saldo          lo que falta por pagar del préstamo

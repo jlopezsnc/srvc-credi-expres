@@ -193,8 +193,8 @@ class ConsultasCarteraSqlTest {
         }
     }
 
-    // Datos ficticios. Hoy = 2026-10-30.
-    private static final String ESQUEMA_Y_DATOS = """
+    /** Las tablas que leen las consultas, con las columnas que usan. */
+    static final String ESQUEMA = """
             CREATE TABLE cliente (id_cliente INT PRIMARY KEY, nombre_completo VARCHAR(100) NOT NULL, telefono VARCHAR(10));
             CREATE TABLE modalidad (id_modalidad INT PRIMARY KEY, descripcion VARCHAR(20) NOT NULL, dias_activos INT NOT NULL);
             CREATE TABLE calculadora_prestamos (id_calculadora_prestamo INT PRIMARY KEY, id_cliente INT, id_modalidad INT,
@@ -203,7 +203,16 @@ class ConsultasCarteraSqlTest {
                 importe_cuota REAL, fecha_pago DATE, estado_pago INT, id_calculadora_prestamo INT);
             CREATE TABLE pago (id_pago INT PRIMARY KEY, id_cuota INT NOT NULL, importe DECIMAL(12, 2) NOT NULL,
                 estatus VARCHAR(10) NOT NULL);
+            CREATE TABLE convenio (id_convenio INT PRIMARY KEY, folio VARCHAR(12), id_cliente_titular INT,
+                id_prestamo_convenio INT NOT NULL, id_modalidad INT, numero_pagos INT, saldo_convenido DECIMAL(12, 2),
+                total_pagar DECIMAL(12, 2), importe_cuota DECIMAL(12, 2), estatus VARCHAR(12) NOT NULL,
+                fecha_registro TIMESTAMP(3));
+            CREATE TABLE convenio_prestamo (id_convenio_prestamo INT PRIMARY KEY, id_convenio INT NOT NULL,
+                id_prestamo INT NOT NULL, id_cliente INT, estatus VARCHAR(12) NOT NULL);
+            """;
 
+    // Datos ficticios. Hoy = 2026-10-30.
+    private static final String ESQUEMA_Y_DATOS = ESQUEMA + """
             INSERT INTO cliente VALUES (1, 'MARÍA FERNANDA LÓPEZ RUIZ', '9932145567'),
                 (2, 'JOSÉ ANTONIO HERNÁNDEZ CRUZ', NULL), (3, 'GUADALUPE MARTÍNEZ TORRES', '9934501188');
             INSERT INTO modalidad VALUES (1, 'Semanal', 7), (2, 'Quincenal', 15);

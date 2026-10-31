@@ -40,8 +40,11 @@ import java.util.List;
 import static com.crediexpress.service.cobranza.MensajesCobranza.CUOTA_NO_EXISTE;
 import static com.crediexpress.service.cobranza.MensajesCobranza.CUOTA_PAGADA;
 import static com.crediexpress.service.cobranza.MensajesCobranza.MOTIVO_INVALIDO;
+import static com.crediexpress.service.cobranza.MensajesCobranza.PAGO_EN_CONVENIO;
 import static com.crediexpress.service.cobranza.MensajesCobranza.PAGO_NO_EXISTE;
 import static com.crediexpress.service.cobranza.MensajesCobranza.PAGO_YA_CANCELADO;
+import static com.crediexpress.service.cobranza.MensajesCobranza.PRESTAMO_CANCELADO;
+import static com.crediexpress.service.cobranza.MensajesCobranza.PRESTAMO_EN_CONVENIO;
 import static com.crediexpress.service.cobranza.MensajesCobranza.PRESTAMO_LIQUIDADO;
 import static com.crediexpress.service.cobranza.MensajesCobranza.PRESTAMO_NO_EXISTE;
 import static com.crediexpress.service.cobranza.MensajesCobranza.RECARGO_CUOTA_NO_VENCIDA;
@@ -86,6 +89,7 @@ public class PagoServiceImpl implements PagoService {
         if (!previos.isEmpty()) {
             return ResultadoOperacion.repetida(mapper.pago(previos.getFirst()));
         }
+        validarCobrable(idPrestamo);
 
         EstadoPrestamos cuota = conSaldo.stream()
                 .filter(candidata -> candidata.getId().equals(request.idCuota()))
@@ -134,6 +138,7 @@ public class PagoServiceImpl implements PagoService {
         if (!previos.isEmpty()) {
             return ResultadoOperacion.repetida(mapper.liquidacion(previos, clienteSinAdeudos(previos.getFirst())));
         }
+        validarCobrable(request.idPrestamo());
         if (conSaldo.isEmpty()) {
             throw ApiException.conflicto(PRESTAMO_LIQUIDADO);
         }
@@ -187,6 +192,10 @@ public class PagoServiceImpl implements PagoService {
         // La consulta de abonos hace flush antes: ya no cuenta los pagos recién cancelados.
         List<EstadoPrestamos> cuotas = cuotaRepository.bloquear(
                 vigentes.stream().map(pago -> pago.getCuota().getId()).distinct().toList());
+        // Su saldo ya se convino con estos pagos: deshacerlos cambiaría el convenio (se revierte todo).
+        if (cuotas.stream().anyMatch(EstadoPrestamos::enConvenio)) {
+            throw ApiException.conflicto(PAGO_EN_CONVENIO);
+        }
         saldosCuotas.calcular(cuotas)
                 .forEach(cuota -> cuota.cuota().aplicarAbonos(cuota.abonado(), null));
 
@@ -217,6 +226,16 @@ public class PagoServiceImpl implements PagoService {
         // Todas quedan pagadas, incluidas las que ya tenían saldo cero por un dato inconsistente.
         cuotas.forEach(cuota -> cuota.cuota().aplicarAbonos(cuota.cuota().importe(), operacion.datos().fechaPago()));
         return renglones;
+    }
+
+    /** Un préstamo en convenio o de un convenio cancelado ya no se cobra (las cuotas ya están bloqueadas). */
+    private void validarCobrable(Integer idPrestamo) {
+        if (cuotaRepository.prestamoEnConvenio(idPrestamo)) {
+            throw ApiException.conflicto(PRESTAMO_EN_CONVENIO);
+        }
+        if (cuotaRepository.prestamoCancelado(idPrestamo)) {
+            throw ApiException.conflicto(PRESTAMO_CANCELADO);
+        }
     }
 
     private boolean clienteSinAdeudos(Pago pago) {

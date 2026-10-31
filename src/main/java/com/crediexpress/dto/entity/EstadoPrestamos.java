@@ -30,14 +30,14 @@ public class EstadoPrestamos {
     @JoinColumn(name = "id_cliente", referencedColumnName = "id_cliente")
     private Cliente idCliente;
 
-    /** La columna es FLOAT, pero siempre guarda enteros (1, 2, 3…). */
+    /** 1, 2, 3… ({@code INT} desde V6; antes FLOAT). */
     @Column(name = "numero_cuota")
     private Integer numeroCuota;
 
     @Column(name = "fecha_vencimiento")
     private LocalDate fechaVencimiento;
 
-    /** Columna FLOAT: normalizar con {@link com.crediexpress.util.Dinero#de} antes de operar. */
+    /** {@code DECIMAL(12,2)} desde V6; {@link #importe()} la entrega a centavos. */
     @Column(name = "importe_cuota")
     private BigDecimal importeCuota;
 
@@ -63,7 +63,7 @@ public class EstadoPrestamos {
         return EstadoCuota.deCodigo(estadoPago);
     }
 
-    /** Lo que vale la cuota, normalizado a centavos (la columna es FLOAT). */
+    /** Lo que vale la cuota, a centavos. */
     public BigDecimal importe() {
         return Dinero.de(importeCuota);
     }
@@ -73,10 +73,48 @@ public class EstadoPrestamos {
      * {@code pago} no tiene abonos registrados y su saldo es cero.
      */
     public BigDecimal saldo(BigDecimal abonado) {
-        if (estado() == EstadoCuota.PAGADA) {
+        if (estado() == EstadoCuota.PAGADA || enConvenio() || cancelada()) {
             return Dinero.CERO;
         }
         return importe().subtract(abonado).max(Dinero.CERO);
+    }
+
+    public boolean enConvenio() {
+        return estado() == EstadoCuota.EN_CONVENIO;
+    }
+
+    public boolean cancelada() {
+        return estado() == EstadoCuota.CANCELADA;
+    }
+
+    /** Se cancela el convenio que generó este préstamo: la cuota deja de cobrarse. Solo sin abonos. */
+    public void cancelar() {
+        if (estado() != EstadoCuota.PENDIENTE) {
+            throw new IllegalStateException("La cuota " + id + " no se puede cancelar: está " + estado());
+        }
+        estadoPago = EstadoCuota.CANCELADA.codigo();
+    }
+
+    /**
+     * Se cancela el convenio al que pasó su saldo: vuelve a cobrarse aquí, pendiente o con abono
+     * parcial según lo que ya tenía abonado.
+     *
+     * @return el saldo que vuelve a deber
+     */
+    public BigDecimal regresarDeConvenio(BigDecimal abonado) {
+        if (!enConvenio()) {
+            throw new IllegalStateException("La cuota " + id + " no está en convenio");
+        }
+        estadoPago = EstadoCuota.PENDIENTE.codigo();
+        return aplicarAbonos(abonado, null);
+    }
+
+    /** Su saldo pasa a un convenio: deja de cobrarse aquí. Solo para cuotas con saldo. */
+    public void pasarAConvenio() {
+        if (estado() == EstadoCuota.PAGADA || enConvenio()) {
+            throw new IllegalStateException("La cuota " + id + " no tiene saldo que convenir");
+        }
+        estadoPago = EstadoCuota.EN_CONVENIO.codigo();
     }
 
     /**
@@ -87,6 +125,9 @@ public class EstadoPrestamos {
      * @return el saldo que queda
      */
     public BigDecimal aplicarAbonos(BigDecimal abonado, LocalDate fechaPago) {
+        if (enConvenio() || cancelada()) {
+            throw new IllegalStateException("La cuota " + id + " está " + estado() + ": no recibe abonos");
+        }
         BigDecimal saldo = importe().subtract(abonado).max(Dinero.CERO);
         if (saldo.signum() == 0) {
             estadoPago = EstadoCuota.PAGADA.codigo();

@@ -11,7 +11,17 @@ import java.util.List;
 public enum EstadoCuota {
     PENDIENTE(1),
     ABONO_PARCIAL(2),
-    PAGADA(3);
+    PAGADA(3),
+    /**
+     * Su saldo pasó a un convenio (V4, 2026-10-30): ya no se cobra aquí, cuenta como saldo 0 y lo
+     * abonado se conserva como historial.
+     */
+    EN_CONVENIO(4),
+    /**
+     * Cuota del préstamo de un convenio cancelado (V5, 2026-10-30): no se borra, ya no se cobra y
+     * cuenta como saldo 0.
+     */
+    CANCELADA(5);
 
     private static final List<Integer> CODIGOS_CON_SALDO = List.of(PENDIENTE.codigo, ABONO_PARCIAL.codigo);
 

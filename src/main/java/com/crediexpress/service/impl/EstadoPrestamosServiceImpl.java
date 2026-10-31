@@ -2,10 +2,8 @@ package com.crediexpress.service.impl;
 
 import com.crediexpress.dto.entity.CalculadoraPrestamos;
 import com.crediexpress.dto.entity.Cliente;
-import com.crediexpress.dto.entity.EstadoCuota;
 import com.crediexpress.dto.entity.EstadoPrestamos;
 import com.crediexpress.dto.entity.Modalidad;
-import com.crediexpress.dto.repository.CalculadoraPrestamosRepository;
 import com.crediexpress.dto.repository.ClienteRepository;
 import com.crediexpress.dto.repository.EstadoPrestamosRepository;
 import com.crediexpress.dto.repository.ModalidadRepository;
@@ -20,6 +18,8 @@ import com.crediexpress.service.CalculadoraPrestamo;
 import com.crediexpress.service.CalculadoraPrestamo.Periodicidad;
 import com.crediexpress.service.CalculadoraPrestamo.Plan;
 import com.crediexpress.service.EstadoPrestamosService;
+import com.crediexpress.service.prestamo.RegistroPrestamo;
+import com.crediexpress.service.prestamo.RegistroPrestamo.Registrado;
 import com.crediexpress.util.Dinero;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -37,12 +37,11 @@ import java.util.stream.Collectors;
 public class EstadoPrestamosServiceImpl implements EstadoPrestamosService {
 
     static final String MENSAJE_GENERADO = "Prestamo generado correctamente";
-    private static final String ALERTA_INICIAL = "VIGENTE";
 
     private final EstadoPrestamosRepository estadoPrestamosRepository;
     private final ModalidadRepository modalidadRepository;
-    private final CalculadoraPrestamosRepository calculadoraPrestamosRepository;
     private final ClienteRepository clienteRepository;
+    private final RegistroPrestamo registroPrestamo;
     private final Clock clock;
 
     @Override
@@ -90,32 +89,9 @@ public class EstadoPrestamosServiceImpl implements EstadoPrestamosService {
         Plan plan = CalculadoraPrestamo.calcular(request.importeCredito(), request.tasaInteres(),
                 request.numeroCuota(), periodicidad, request.fechaInicioCredito());
 
-        CalculadoraPrestamos prestamo = calculadoraPrestamosRepository.save(CalculadoraPrestamos.builder()
-                .idCliente(cliente)
-                .idModalidad(modalidad)
-                .importeCredito(plan.monto())
-                .tasaInteres(plan.tasaMensual())
-                .numeroCuotas(request.numeroCuota())
-                .importeCuota(plan.importeCuota())
-                .totalPagar(plan.total())
-                .interesGenerado(plan.interes())
-                .fechaSolicitud(hoy)
-                .fechaInicioCredito(request.fechaInicioCredito())
-                .build());
-
-        List<EstadoPrestamos> cuotas = plan.cuotas().stream()
-                .map(cuota -> EstadoPrestamos.builder()
-                        .idCalculadoraPrestamo(prestamo)
-                        .idCliente(cliente)
-                        .numeroCuota(cuota.numero())
-                        .fechaVencimiento(cuota.fechaVencimiento())
-                        .importeCuota(cuota.importe())
-                        .estadoPago(EstadoCuota.PENDIENTE.codigo())
-                        .diasMoratorios(0)
-                        .alerta(ALERTA_INICIAL)
-                        .build())
-                .toList();
-        estadoPrestamosRepository.saveAll(cuotas);
+        Registrado registrado = registroPrestamo.registrar(cliente, modalidad, plan, hoy);
+        CalculadoraPrestamos prestamo = registrado.prestamo();
+        List<EstadoPrestamos> cuotas = registrado.cuotas();
 
         log.info("Préstamo {} generado: cliente {}, {} cuotas, total {}", prestamo.getIdCalculadoraPrestamo(),
                 cliente.getIdCliente(), cuotas.size(), plan.total());

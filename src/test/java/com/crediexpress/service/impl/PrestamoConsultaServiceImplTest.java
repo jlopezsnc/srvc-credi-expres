@@ -1,5 +1,6 @@
 package com.crediexpress.service.impl;
 
+import com.crediexpress.dto.entity.EstadoCuota;
 import com.crediexpress.dto.entity.EstatusCuota;
 import com.crediexpress.dto.entity.SituacionPrestamo;
 import com.crediexpress.dto.repository.consulta.PrestamoConsultaRepository;
@@ -49,7 +50,7 @@ class PrestamoConsultaServiceImplTest {
         // Como llega de la base: decimales de más que se normalizan a centavos.
         return new Prestamo(12, 2, "CLIENTE DE PRUEBA", null, 2, "Quincenal", 8, new BigDecimal("1110.0000"), 3, 1,
                 new BigDecimal("8880.0000"), new BigDecimal("5150.0000"), proximo, proximo == null ? null : 4,
-                situacion);
+                situacion, null, null);
     }
 
     @Test
@@ -59,14 +60,14 @@ class PrestamoConsultaServiceImplTest {
         when(repository.buscar(consulta)).thenReturn(List.of(prestamo(SituacionPrestamo.CON_ATRASO, HOY.minusDays(5))));
         when(repository.contar(consulta)).thenReturn(11L);
         when(repository.contarPorSituacion(HOY)).thenReturn(Map.of(SituacionPrestamo.AL_CORRIENTE, 6L,
-                SituacionPrestamo.CON_ATRASO, 5L, SituacionPrestamo.LIQUIDADO, 3L));
+                SituacionPrestamo.CON_ATRASO, 5L, SituacionPrestamo.LIQUIDADO, 3L, SituacionPrestamo.EN_CONVENIO, 2L));
 
-        PaginaPrestamosResponse pagina = servicio.listar(FiltroPrestamos.ACTIVOS, "lopez", OrdenPrestamos.SALDO,
+        PaginaPrestamosResponse pagina = servicio.listar(FiltroPrestamos.ACTIVOS, "lopez", null, OrdenPrestamos.SALDO,
                 Direccion.DESC, 1, 10);
 
         assertThat(pagina.totalElementos()).isEqualTo(11);
         assertThat(pagina.totalPaginas()).isEqualTo(2);
-        assertThat(pagina.contadores()).isEqualTo(new PaginaPrestamosResponse.Contadores(11, 5, 3, 14));
+        assertThat(pagina.contadores()).isEqualTo(new PaginaPrestamosResponse.Contadores(11, 6, 5, 3, 2, 0, 16));
         PrestamoResumenResponse p = pagina.contenido().getFirst();
         assertThat(p.saldoPendiente()).isEqualTo(new BigDecimal("5150.00"));
         assertThat(p.importeCuota()).isEqualTo(new BigDecimal("1110.00"));
@@ -103,6 +104,6 @@ class PrestamoConsultaServiceImplTest {
 
     private static Cuota cuota(int numero, LocalDate vence, String abonado, String saldo) {
         return new Cuota(100 + numero, numero, vence, null, new BigDecimal("1110"), new BigDecimal(abonado),
-                new BigDecimal(saldo));
+                new BigDecimal(saldo), EstadoCuota.PENDIENTE);
     }
 }

@@ -36,10 +36,11 @@ public class PrestamoConsultaServiceImpl implements PrestamoConsultaService {
     private final Clock clock;
 
     @Override
-    public PaginaPrestamosResponse listar(FiltroPrestamos filtro, String busqueda, OrdenPrestamos orden,
+    public PaginaPrestamosResponse listar(FiltroPrestamos filtro, String busqueda, Integer idCliente,
+                                          OrdenPrestamos orden,
                                           Direccion direccion, int pagina, int tamano) {
         LocalDate hoy = LocalDate.now(clock);
-        Consulta consulta = new Consulta(filtro, busqueda, orden, direccion, pagina, tamano, hoy);
+        Consulta consulta = new Consulta(filtro, busqueda, orden, direccion, pagina, tamano, hoy, idCliente);
         List<PrestamoResumenResponse> contenido = repository.buscar(consulta).stream()
                 .map(PrestamoConsultaServiceImpl::resumen)
                 .toList();
@@ -62,8 +63,10 @@ public class PrestamoConsultaServiceImpl implements PrestamoConsultaService {
         long alCorriente = cuentas.getOrDefault(SituacionPrestamo.AL_CORRIENTE, 0L);
         long conAtraso = cuentas.getOrDefault(SituacionPrestamo.CON_ATRASO, 0L);
         long liquidados = cuentas.getOrDefault(SituacionPrestamo.LIQUIDADO, 0L);
-        return new PaginaPrestamosResponse.Contadores(alCorriente + conAtraso, conAtraso, liquidados,
-                alCorriente + conAtraso + liquidados);
+        long enConvenio = cuentas.getOrDefault(SituacionPrestamo.EN_CONVENIO, 0L);
+        long cancelados = cuentas.getOrDefault(SituacionPrestamo.CANCELADO, 0L);
+        return new PaginaPrestamosResponse.Contadores(alCorriente + conAtraso, alCorriente, conAtraso, liquidados,
+                enConvenio, cancelados, alCorriente + conAtraso + liquidados + enConvenio + cancelados);
     }
 
     private static PrestamoResumenResponse resumen(Prestamo p) {
@@ -79,7 +82,9 @@ public class PrestamoConsultaServiceImpl implements PrestamoConsultaService {
                 Dinero.oCero(p.saldo()),
                 p.proximoPago(),
                 p.proximaCuota(),
-                p.situacion());
+                p.situacion(),
+                p.convenioDestino(),
+                p.convenioOrigen());
     }
 
     private static PrestamoDetalleResponse.Cuota cuota(Cuota c, LocalDate hoy) {
@@ -91,6 +96,6 @@ public class PrestamoConsultaServiceImpl implements PrestamoConsultaService {
                 Dinero.oCero(c.abonado()),
                 Dinero.oCero(c.saldo()),
                 c.fechaPago(),
-                EstatusCuota.de(c.abonado(), c.saldo(), c.fechaVencimiento(), hoy));
+                EstatusCuota.de(c.estado(), c.abonado(), c.saldo(), c.fechaVencimiento(), hoy));
     }
 }

@@ -2,11 +2,14 @@ package com.crediexpress.service.impl;
 
 import com.crediexpress.dto.entity.Cliente;
 import com.crediexpress.dto.repository.ClienteRepository;
+import com.crediexpress.dto.view.request.ActualizarClienteRequest;
 import com.crediexpress.dto.view.request.ClienteRequest;
 import com.crediexpress.dto.view.response.ClienteResponse;
+import com.crediexpress.exception.ApiException;
 import com.crediexpress.service.ClienteService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.sql.Date;
 import java.util.ArrayList;
@@ -34,6 +37,30 @@ public class ClienteServiceImpl implements ClienteService {
         return dtoToVo(clienteRepository.saveAndFlush(voToDto(clienteRequest)));
     }
 
+
+    @Override
+    @Transactional
+    public ClienteResponse actualizarCliente(final Integer idCliente, final ActualizarClienteRequest request) {
+        Cliente cliente = clienteRepository.findById(idCliente)
+                .orElseThrow(() -> ApiException.noEncontrado("No existe el cliente."));
+        String curp = request.curp().strip().toUpperCase();
+        if (clienteRepository.existsByCurpAndIdClienteNot(curp, idCliente)) {
+            throw ApiException.conflicto("Ya existe otro cliente registrado con esta CURP.");
+        }
+        cliente.setNombreCompleto(request.nombreCompleto().strip());
+        cliente.setCurp(curp);
+        cliente.setTelefono(opcional(request.telefono()));
+        cliente.setCorreoElectronico(opcional(request.correoElectronico()));
+        cliente.setDomicilioCalle(opcional(request.domicilioCalle()));
+        cliente.setDomicilioColonia(opcional(request.domicilioColonia()));
+        cliente.setDomicilioCiudad(opcional(request.domicilioCiudad()));
+        return dtoToVo(clienteRepository.saveAndFlush(cliente));
+    }
+
+    /** El front manda "" en los campos opcionales vacíos; en la base van como NULL. */
+    private static String opcional(String valor) {
+        return valor == null || valor.isBlank() ? null : valor.strip();
+    }
 
     private Cliente voToDto(ClienteRequest clienteRequest) {
         return Cliente.builder()

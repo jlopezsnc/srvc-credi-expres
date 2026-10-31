@@ -1,9 +1,11 @@
 package com.crediexpress.controller;
 
+import com.crediexpress.dto.view.request.ActualizarClienteRequest;
 import com.crediexpress.dto.view.request.ClienteRequest;
 import com.crediexpress.dto.view.response.ClienteResponse;
 import com.crediexpress.dto.view.response.GenericResponse;
 import com.crediexpress.service.ClienteService;
+import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.lang.NonNull;
@@ -48,6 +50,17 @@ public class ClienteController {
         return ResponseEntity.status(HttpStatus.OK).body(GenericResponse.builder()
                         .objetoResponse(response)
                         .httpStatus(HttpStatus.OK)
+                .build());
+    }
+
+    @PutMapping("/cliente-actualizar/{idCliente}")
+    public ResponseEntity<GenericResponse> actualizarCliente(
+            @PathVariable Integer idCliente, @Valid @RequestBody ActualizarClienteRequest request) {
+        ClienteResponse response = clienteService.actualizarCliente(idCliente, request);
+        return ResponseEntity.ok(GenericResponse.builder()
+                .objetoResponse(response)
+                .mensaje("Cliente actualizado.")
+                .httpStatus(HttpStatus.OK)
                 .build());
     }
 }

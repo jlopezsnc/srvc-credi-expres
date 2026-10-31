@@ -10,6 +10,7 @@ import com.crediexpress.dto.repository.ClienteRepository;
 import com.crediexpress.dto.repository.EstadoPrestamosRepository;
 import com.crediexpress.dto.repository.ModalidadRepository;
 import com.crediexpress.dto.view.request.CalculadoraPagosRequest;
+import com.crediexpress.service.prestamo.RegistroPrestamo;
 import com.crediexpress.dto.view.response.CalcularPagoResponse;
 import com.crediexpress.exception.ApiException;
 import org.junit.jupiter.api.BeforeEach;
@@ -64,8 +65,8 @@ class EstadoPrestamosServiceImplTest {
 
     @BeforeEach
     void preparar() {
-        servicio = new EstadoPrestamosServiceImpl(estadoPrestamosRepository, modalidadRepository,
-                calculadoraPrestamosRepository, clienteRepository, RELOJ);
+        servicio = new EstadoPrestamosServiceImpl(estadoPrestamosRepository, modalidadRepository, clienteRepository,
+                new RegistroPrestamo(calculadoraPrestamosRepository, estadoPrestamosRepository), RELOJ);
     }
 
     private static CalculadoraPagosRequest peticion(int cuotas, LocalDate primerPago) {

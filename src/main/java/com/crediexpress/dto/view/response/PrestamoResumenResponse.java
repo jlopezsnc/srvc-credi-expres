@@ -12,6 +12,8 @@ import java.time.LocalDate;
  *
  * @param proximoPago  vencimiento de la primera cuota con saldo; {@code null} si está liquidado
  * @param proximaCuota número de esa cuota; {@code null} si está liquidado
+ * @param folioConvenio       convenio al que pasó su saldo; {@code null} si no está en convenio
+ * @param folioConvenioOrigen convenio que generó este préstamo; {@code null} si es un préstamo normal
  */
 public record PrestamoResumenResponse(
         Integer idPrestamo,
@@ -25,5 +27,7 @@ public record PrestamoResumenResponse(
         @JsonFormat(shape = JsonFormat.Shape.STRING) BigDecimal saldoPendiente,
         LocalDate proximoPago,
         Integer proximaCuota,
-        SituacionPrestamo estado) {
+        SituacionPrestamo estado,
+        String folioConvenio,
+        String folioConvenioOrigen) {
 }

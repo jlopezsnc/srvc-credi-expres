@@ -10,7 +10,20 @@ public enum EstatusCuota {
     VENCIDA,
     /** Con abonos y saldo, todavía no vence. */
     ABONO_PARCIAL,
-    PENDIENTE;
+    PENDIENTE,
+    /** Su saldo pasó a un convenio. */
+    EN_CONVENIO,
+    /** Del préstamo de un convenio cancelado. */
+    CANCELADA;
+
+    public static EstatusCuota de(EstadoCuota estado, BigDecimal abonado, BigDecimal saldo, LocalDate vencimiento,
+                                  LocalDate hoy) {
+        return switch (estado) {
+            case EN_CONVENIO -> EN_CONVENIO;
+            case CANCELADA -> CANCELADA;
+            default -> de(abonado, saldo, vencimiento, hoy);
+        };
+    }
 
     public static EstatusCuota de(BigDecimal abonado, BigDecimal saldo, LocalDate vencimiento, LocalDate hoy) {
         if (saldo.signum() == 0) {

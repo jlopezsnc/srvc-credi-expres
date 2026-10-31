@@ -11,7 +11,9 @@ public record PaginaPrestamosResponse(
         int totalPaginas,
         Contadores contadores) {
 
-    public record Contadores(long activos, long conAtraso, long liquidados, long todos) {
+    /** {@code activos} = al corriente + con atraso; {@code todos} incluye en convenio y cancelados. */
+    public record Contadores(long activos, long alCorriente, long conAtraso, long liquidados, long enConvenio,
+                             long cancelados, long todos) {
     }
 
     public static PaginaPrestamosResponse de(List<PrestamoResumenResponse> contenido, int pagina, int tamano,

@@ -9,8 +9,9 @@ import com.crediexpress.dto.view.response.PrestamoDetalleResponse;
 /** Lista de préstamos y su calendario (solo lectura). Contrato: docs/API-PRESTAMOS.md del front. */
 public interface PrestamoConsultaService {
 
-    PaginaPrestamosResponse listar(FiltroPrestamos filtro, String busqueda, OrdenPrestamos orden, Direccion direccion,
-                                   int pagina, int tamano);
+    /** @param idCliente solo los de este cliente; {@code null} = de todos */
+    PaginaPrestamosResponse listar(FiltroPrestamos filtro, String busqueda, Integer idCliente, OrdenPrestamos orden,
+                                   Direccion direccion, int pagina, int tamano);
 
     PrestamoDetalleResponse detalle(Integer idPrestamo);
 }

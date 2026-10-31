@@ -20,6 +20,7 @@ import com.crediexpress.service.cobranza.CobranzaMapper;
 import com.crediexpress.service.cobranza.DatosPago;
 import com.crediexpress.service.cobranza.IdempotenciaPago;
 import com.crediexpress.service.cobranza.LlaveIdempotencia;
+import com.crediexpress.service.cobranza.MensajesCobranza;
 import com.crediexpress.service.cobranza.OperacionPago;
 import com.crediexpress.service.cobranza.ResultadoOperacion;
 import com.crediexpress.service.cobranza.SaldosCuotas;
@@ -207,6 +208,28 @@ class PagoServiceImplTest {
         }
 
         @Test
+        void unPrestamoEnConvenioYaNoSeCobra() {
+            conCuotasPendientes();
+            when(cuotaRepository.prestamoEnConvenio(12)).thenReturn(true);
+
+            assertThatThrownBy(() -> registrar(request(101, "1110", null, MetodoPago.EFECTIVO, null)))
+                    .isInstanceOfSatisfying(ApiException.class, error -> {
+                        assertThat(error.getStatus()).isEqualTo(HttpStatus.CONFLICT);
+                        assertThat(error.getMessage()).isEqualTo(MensajesCobranza.PRESTAMO_EN_CONVENIO);
+                    });
+        }
+
+        @Test
+        void elPrestamoDeUnConvenioCanceladoYaNoSeCobra() {
+            conCuotasPendientes();
+            when(cuotaRepository.prestamoCancelado(12)).thenReturn(true);
+
+            assertThatThrownBy(() -> registrar(request(101, "1110", null, MetodoPago.EFECTIVO, null)))
+                    .isInstanceOfSatisfying(ApiException.class,
+                            error -> assertThat(error.getMessage()).isEqualTo(MensajesCobranza.PRESTAMO_CANCELADO));
+        }
+
+        @Test
         void cuotaInexistenteResponde404() {
             when(cuotaRepository.findIdPrestamo(999)).thenReturn(Optional.empty());
 
@@ -382,6 +405,20 @@ class PagoServiceImplTest {
             servicio.cancelar(240, new CancelarPagoRequest("Duplicado"), USUARIO);
 
             assertThat(cuota1.estado()).isEqualTo(EstadoCuota.ABONO_PARCIAL);
+        }
+
+        @Test
+        void noSeCancelaUnPagoDeUnPrestamoQueYaEstaEnConvenio() {
+            Pago pago = renglon(cuota1, 240, RELOJ.instant());
+            cuota2.pasarAConvenio();
+            Pago otro = renglon(cuota2, 241, RELOJ.instant());
+            when(pagoRepository.findFolio(240)).thenReturn(Optional.of("P-000240"));
+            when(pagoRepository.bloquearPorFolio("P-000240")).thenReturn(List.of(pago, otro));
+            when(cuotaRepository.bloquear(List.of(101, 102))).thenReturn(List.of(cuota1, cuota2));
+
+            assertThatThrownBy(() -> servicio.cancelar(240, new CancelarPagoRequest("Duplicado"), USUARIO))
+                    .isInstanceOfSatisfying(ApiException.class,
+                            error -> assertThat(error.getMessage()).isEqualTo(MensajesCobranza.PAGO_EN_CONVENIO));
         }
 
         @Test

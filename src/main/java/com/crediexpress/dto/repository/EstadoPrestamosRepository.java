@@ -33,7 +33,7 @@ public interface EstadoPrestamosRepository extends JpaRepository<EstadoPrestamos
         Number getImporte();
     }
 
-    // Saldo = importe_cuota (FLOAT, redondeado a centavos) − pagos VIGENTE de la cuota.
+    // Saldo = importe_cuota (redondeado a centavos) − pagos VIGENTE de la cuota.
     String SALDO_CUOTAS = """
             SELECT COUNT(*) AS cuotas,
                    SUM(ROUND(c.importe_cuota, 2) - COALESCE((SELECT SUM(p.importe) FROM pago p
@@ -80,6 +80,12 @@ public interface EstadoPrestamosRepository extends JpaRepository<EstadoPrestamos
     List<EstadoPrestamos> bloquearConSaldo(@Param("idPrestamo") Integer idPrestamo,
                                            @Param("conSaldo") Collection<Integer> conSaldo);
 
+    @Query("""
+            SELECT c FROM EstadoPrestamos c
+            WHERE c.idCalculadoraPrestamo.idCalculadoraPrestamo = :idPrestamo
+            ORDER BY c.numeroCuota""")
+    List<EstadoPrestamos> cuotasDelPrestamo(@Param("idPrestamo") Integer idPrestamo);
+
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("SELECT c FROM EstadoPrestamos c WHERE c.id IN :ids ORDER BY c.id")
     List<EstadoPrestamos> bloquear(@Param("ids") Collection<Integer> ids);
@@ -90,6 +96,11 @@ public interface EstadoPrestamosRepository extends JpaRepository<EstadoPrestamos
               AND (c.estadoPago IS NULL OR c.estadoPago IN :conSaldo)""")
     boolean existsConSaldoDelCliente(@Param("idCliente") Integer idCliente,
                                      @Param("conSaldo") Collection<Integer> conSaldo);
+
+    @Query("""
+            SELECT COUNT(c) > 0 FROM EstadoPrestamos c
+            WHERE c.idCalculadoraPrestamo.idCalculadoraPrestamo = :idPrestamo AND c.estadoPago = :estado""")
+    boolean existsDelPrestamoConEstado(@Param("idPrestamo") Integer idPrestamo, @Param("estado") Integer estado);
 
     @NativeQuery(SALDO_CUOTAS + "  AND c.fecha_vencimiento = :fecha")
     TotalCuotas totalQueVence(@Param("fecha") LocalDate fecha);
@@ -107,6 +118,31 @@ public interface EstadoPrestamosRepository extends JpaRepository<EstadoPrestamos
     default List<EstadoPrestamos> bloquearConSaldoDelPrestamo(Integer idPrestamo) {
         return bloquearConSaldo(idPrestamo, EstadoCuota.codigosConSaldo());
     }
+
+    default boolean prestamoEnConvenio(Integer idPrestamo) {
+        return existsDelPrestamoConEstado(idPrestamo, EstadoCuota.EN_CONVENIO.codigo());
+    }
+
+    default boolean prestamoCancelado(Integer idPrestamo) {
+        return existsDelPrestamoConEstado(idPrestamo, EstadoCuota.CANCELADA.codigo());
+    }
+
+    /** Todas las cuotas del préstamo, bloqueadas, en orden. */
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("""
+            SELECT c FROM EstadoPrestamos c
+            WHERE c.idCalculadoraPrestamo.idCalculadoraPrestamo = :idPrestamo
+            ORDER BY c.numeroCuota""")
+    List<EstadoPrestamos> bloquearDelPrestamo(@Param("idPrestamo") Integer idPrestamo);
+
+    /** Las cuotas del préstamo con ese {@code estado_pago}, bloqueadas, en orden. */
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("""
+            SELECT c FROM EstadoPrestamos c
+            WHERE c.idCalculadoraPrestamo.idCalculadoraPrestamo = :idPrestamo AND c.estadoPago = :estado
+            ORDER BY c.numeroCuota""")
+    List<EstadoPrestamos> bloquearDelPrestamoConEstado(@Param("idPrestamo") Integer idPrestamo,
+                                                      @Param("estado") Integer estado);
 
     default boolean clienteTieneSaldo(Integer idCliente) {
         return existsConSaldoDelCliente(idCliente, EstadoCuota.codigosConSaldo());
