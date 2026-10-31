@@ -15,6 +15,7 @@ public final class MensajesCobranza {
             "No se puede cancelar: el préstamo de este pago ya está en convenio.";
     public static final String PAGO_NO_EXISTE = "El pago no existe.";
     public static final String PAGO_YA_CANCELADO = "Este pago ya estaba cancelado.";
+    public static final String RECIBO_NO_EXISTE = "No hay un pago vigente con ese folio.";
     public static final String SOLO_CANCELAR_HOY = "Solo se pueden cancelar pagos registrados hoy.";
     public static final String MOTIVO_INVALIDO = "Revisa el motivo.";
     public static final String RECARGO_CUOTA_NO_VENCIDA = "Solo se puede cobrar recargo a una cuota vencida.";

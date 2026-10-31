@@ -8,7 +8,11 @@ import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.util.List;
 
-/** Resultado de liquidar un préstamo: un folio y un renglón de pago por cuota liquidada. */
+/**
+ * Resultado de liquidar un préstamo: un folio y un renglón de pago por cuota liquidada.
+ * {@code clienteSinAdeudos} es la situación al momento de cobrar; en una reimpresión va en
+ * {@code null} porque no se guarda y hoy puede ser otra.
+ */
 public record LiquidacionResponse(
         String folio,
         Integer idPrestamo,
@@ -23,7 +27,7 @@ public record LiquidacionResponse(
         String nota,
         List<Renglon> pagos,
         boolean prestamoLiquidado,
-        boolean clienteSinAdeudos,
+        Boolean clienteSinAdeudos,
         String registradoPor,
         OffsetDateTime fechaRegistro) {
 

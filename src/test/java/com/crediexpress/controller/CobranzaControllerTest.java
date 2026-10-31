@@ -6,7 +6,10 @@ import com.crediexpress.dto.entity.EstatusPago;
 import com.crediexpress.dto.entity.MetodoPago;
 import com.crediexpress.dto.entity.TipoPago;
 import com.crediexpress.dto.view.response.ClienteResumenResponse;
+import com.crediexpress.dto.view.response.ModalidadResumenResponse;
 import com.crediexpress.dto.view.response.PagoResponse;
+import com.crediexpress.dto.view.response.ReciboOperacionResponse;
+import com.crediexpress.exception.ApiException;
 import com.crediexpress.dto.view.request.Direccion;
 import com.crediexpress.dto.view.request.OrdenCuotas;
 import com.crediexpress.dto.view.response.PaginaConTotalResponse;
@@ -222,5 +225,28 @@ class CobranzaControllerTest {
                 .content("{\"motivo\":\"Duplicado\"}")).andExpect(status().isUnauthorized());
 
         verifyNoInteractions(consultaService, pagoService);
+    }
+
+    @Test
+    void devuelveLosDatosParaReimprimirElRecibo() throws Exception {
+        when(consultaService.recibo("P-000233")).thenReturn(new ReciboOperacionResponse(TipoPago.CUOTA_COMPLETA,
+                new ModalidadResumenResponse(2, "Quincenal"), 8, pago(), null));
+
+        mockMvc.perform(get(BASE + "/recibo/P-000233").with(jwt()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.objetoResponse.tipo").value("CUOTA_COMPLETA"))
+                .andExpect(jsonPath("$.objetoResponse.pago.folio").value("P-000233"))
+                .andExpect(jsonPath("$.objetoResponse.pago.totalRecibido").value("760.00"))
+                .andExpect(jsonPath("$.objetoResponse.liquidacion").doesNotExist());
+    }
+
+    @Test
+    void unFolioSinPagoVigenteResponde404() throws Exception {
+        when(consultaService.recibo("P-000999"))
+                .thenThrow(ApiException.noEncontrado("No hay un pago vigente con ese folio."));
+
+        mockMvc.perform(get(BASE + "/recibo/P-000999").with(jwt()))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.mensaje").value("No hay un pago vigente con ese folio."));
     }
 }

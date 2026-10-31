@@ -3,7 +3,12 @@ package com.crediexpress.service.impl;
 import com.crediexpress.dto.entity.CalculadoraPrestamos;
 import com.crediexpress.dto.entity.EstadoCuota;
 import com.crediexpress.dto.entity.EstadoPrestamos;
+import com.crediexpress.dto.entity.EstatusPago;
+import com.crediexpress.dto.entity.MetodoPago;
+import com.crediexpress.dto.entity.Pago;
 import com.crediexpress.dto.entity.SituacionCuota;
+import com.crediexpress.dto.entity.TipoPago;
+import com.crediexpress.dto.view.response.ReciboOperacionResponse;
 import com.crediexpress.dto.repository.CalculadoraPrestamosRepository;
 import com.crediexpress.dto.repository.EstadoPrestamosRepository;
 import com.crediexpress.dto.repository.EstadoPrestamosRepository.TotalCuotas;
@@ -171,6 +176,67 @@ class CobranzaConsultaServiceImplTest {
                     assertThat(error.getMessage()).isEqualTo("El préstamo ya está liquidado.");
                 });
         verify(pagoRepository, never()).sumarVigentesPorCuota(any());
+    }
+
+    @Test
+    void elReciboDeUnPagoEsElMismoQueSeRespondioAlCobrar() {
+        Pago pago = pago(233, "P-000233", 2, "710.00", "50.00", TipoPago.CUOTA_COMPLETA);
+        when(pagoRepository.findByFolioAndEstatusOrderByIdPago("P-000233", EstatusPago.VIGENTE))
+                .thenReturn(List.of(pago));
+
+        ReciboOperacionResponse recibo = servicio.recibo("P-000233");
+
+        assertThat(recibo.tipo()).isEqualTo(TipoPago.CUOTA_COMPLETA);
+        assertThat(recibo.modalidad().descripcion()).isEqualTo("Quincenal");
+        assertThat(recibo.liquidacion()).isNull();
+        assertThat(recibo.pago().folio()).isEqualTo("P-000233");
+        assertThat(recibo.pago().totalRecibido()).isEqualTo(new BigDecimal("760.00"));
+        assertThat(recibo.pago().saldoCuota()).isEqualTo(new BigDecimal("0.00"));
+    }
+
+    @Test
+    void elReciboDeUnaLiquidacionJuntaSusRenglonesSinInventarSiQuedoSinAdeudos() {
+        when(pagoRepository.findByFolioAndEstatusOrderByIdPago("P-000240", EstatusPago.VIGENTE)).thenReturn(List.of(
+                pago(240, "P-000240", 7, "1110.00", "30.00", TipoPago.LIQUIDACION),
+                pago(241, "P-000240", 8, "1110.00", "0.00", TipoPago.LIQUIDACION)));
+
+        ReciboOperacionResponse recibo = servicio.recibo("P-000240");
+
+        assertThat(recibo.tipo()).isEqualTo(TipoPago.LIQUIDACION);
+        assertThat(recibo.pago()).isNull();
+        assertThat(recibo.liquidacion().cuotasLiquidadas()).isEqualTo(2);
+        assertThat(recibo.liquidacion().totalRecibido()).isEqualTo(new BigDecimal("2250.00"));
+        assertThat(recibo.liquidacion().clienteSinAdeudos()).isNull();
+        assertThat(recibo.totalCuotas()).isEqualTo(8);
+        assertThat(recibo.modalidad().descripcion()).isEqualTo("Quincenal");
+    }
+
+    @Test
+    void unFolioCanceladoOInexistenteResponde404() {
+        when(pagoRepository.findByFolioAndEstatusOrderByIdPago("P-000999", EstatusPago.VIGENTE)).thenReturn(List.of());
+
+        assertThatThrownBy(() -> servicio.recibo("P-000999"))
+                .isInstanceOfSatisfying(ApiException.class, e -> assertThat(e.getStatus()).isEqualTo(HttpStatus.NOT_FOUND));
+    }
+
+    private Pago pago(int id, String folio, int numeroCuota, String importe, String recargo, TipoPago tipo) {
+        EstadoPrestamos cuota = cuota(prestamo, 100 + numeroCuota, numeroCuota, HOY, "1110.00", EstadoCuota.PAGADA);
+        return Pago.builder()
+                .idPago(id)
+                .folio(folio)
+                .cuota(cuota)
+                .prestamo(prestamo)
+                .cliente(prestamo.getIdCliente())
+                .importe(new BigDecimal(importe))
+                .recargo(new BigDecimal(recargo))
+                .fechaPago(HOY)
+                .metodoPago(MetodoPago.EFECTIVO)
+                .tipo(tipo)
+                .saldoCuota(new BigDecimal("0.00"))
+                .prestamoLiquidado(numeroCuota == 8)
+                .registradoPor("cobrador@ejemplo.com")
+                .fechaRegistro(Instant.parse("2026-10-30T16:15:00Z"))
+                .build();
     }
 
     private static TotalCuotas totalCuotas(long cuotas, Double importe) {

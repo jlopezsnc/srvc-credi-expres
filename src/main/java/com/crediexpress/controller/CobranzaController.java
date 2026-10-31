@@ -117,6 +117,13 @@ public class CobranzaController {
         return ok(pagoService.cancelar(idPago, request, UsuarioAutenticado.de(token)), "Pago cancelado.");
     }
 
+    /** Reimprimir el recibo de una operación ya cobrada. */
+    @GetMapping("/recibo/{folio}")
+    public ResponseEntity<GenericResponse> recibo(
+            @PathVariable @Size(max = 12, message = "El folio no es válido.") String folio) {
+        return ok(consultaService.recibo(folio), "Recibo del pago.");
+    }
+
     @GetMapping("/prestamo-saldo/{idPrestamo}")
     public ResponseEntity<GenericResponse> saldoPrestamo(@PathVariable Integer idPrestamo) {
         return ok(consultaService.saldoPrestamo(idPrestamo), "Saldo del préstamo.");

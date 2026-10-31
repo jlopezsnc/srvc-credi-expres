@@ -4,6 +4,7 @@ import com.crediexpress.dto.entity.CalculadoraPrestamos;
 import com.crediexpress.dto.entity.EstatusPago;
 import com.crediexpress.dto.entity.Pago;
 import com.crediexpress.dto.entity.SituacionCuota;
+import com.crediexpress.dto.entity.TipoPago;
 import com.crediexpress.dto.repository.CalculadoraPrestamosRepository;
 import com.crediexpress.dto.repository.EstadoPrestamosRepository;
 import com.crediexpress.dto.repository.EstadoPrestamosRepository.TotalCuotas;
@@ -20,6 +21,7 @@ import com.crediexpress.dto.view.response.OperacionPagoResponse;
 import com.crediexpress.dto.view.response.PaginaConTotalResponse;
 import com.crediexpress.dto.view.response.PaginaResponse;
 import com.crediexpress.dto.view.response.PagoResponse;
+import com.crediexpress.dto.view.response.ReciboOperacionResponse;
 import com.crediexpress.dto.view.response.ResumenCobranzaResponse;
 import com.crediexpress.dto.view.response.SaldoPrestamoResponse;
 import com.crediexpress.exception.ApiException;
@@ -119,6 +121,24 @@ public class CobranzaConsultaServiceImpl implements CobranzaConsultaService {
             throw ApiException.conflicto(MensajesCobranza.PRESTAMO_LIQUIDADO);
         }
         return mapper.saldoPrestamo(prestamo, cuotas, LocalDate.now(clock));
+    }
+
+    @Override
+    public ReciboOperacionResponse recibo(String folio) {
+        List<Pago> renglones = pagoRepository.findByFolioAndEstatusOrderByIdPago(folio, EstatusPago.VIGENTE);
+        if (renglones.isEmpty()) {
+            throw ApiException.noEncontrado(MensajesCobranza.RECIBO_NO_EXISTE);
+        }
+        Pago primero = renglones.getFirst();
+        CalculadoraPrestamos prestamo = primero.getPrestamo();
+        var modalidad = mapper.modalidad(prestamo.getIdModalidad());
+        if (primero.getTipo() == TipoPago.LIQUIDACION) {
+            // Si el cliente quedó sin adeudos dependía del momento del cobro; no se reconstruye.
+            return new ReciboOperacionResponse(TipoPago.LIQUIDACION, modalidad, prestamo.getNumeroCuotas(), null,
+                    mapper.liquidacion(renglones, null));
+        }
+        return new ReciboOperacionResponse(primero.getTipo(), modalidad, prestamo.getNumeroCuotas(),
+                mapper.pago(primero), null);
     }
 
     private static Rango rango(SituacionCuota situacion, int dias, LocalDate hoy) {

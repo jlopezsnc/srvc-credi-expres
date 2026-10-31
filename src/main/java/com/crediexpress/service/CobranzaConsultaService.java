@@ -9,6 +9,7 @@ import com.crediexpress.dto.view.response.OperacionPagoResponse;
 import com.crediexpress.dto.view.response.PaginaConTotalResponse;
 import com.crediexpress.dto.view.response.PaginaResponse;
 import com.crediexpress.dto.view.response.PagoResponse;
+import com.crediexpress.dto.view.response.ReciboOperacionResponse;
 import com.crediexpress.dto.view.response.ResumenCobranzaResponse;
 import com.crediexpress.dto.view.response.SaldoPrestamoResponse;
 
@@ -39,4 +40,7 @@ public interface CobranzaConsultaService {
                                                               int tamano);
 
     SaldoPrestamoResponse saldoPrestamo(Integer idPrestamo);
+
+    /** Lo necesario para reimprimir el recibo de una operación vigente; 404 si no existe o se canceló. */
+    ReciboOperacionResponse recibo(String folio);
 }

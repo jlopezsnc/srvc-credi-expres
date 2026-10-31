@@ -104,7 +104,7 @@ public class CobranzaMapper {
     }
 
     /** Los renglones de una liquidación, en orden de cuota. */
-    public LiquidacionResponse liquidacion(List<Pago> renglones, boolean clienteSinAdeudos) {
+    public LiquidacionResponse liquidacion(List<Pago> renglones, Boolean clienteSinAdeudos) {
         Pago primero = renglones.getFirst();
         BigDecimal importe = renglones.stream().map(Pago::getImporte).reduce(Dinero.CERO, BigDecimal::add);
         BigDecimal recargo = renglones.stream().map(Pago::getRecargo).reduce(Dinero.CERO, BigDecimal::add);

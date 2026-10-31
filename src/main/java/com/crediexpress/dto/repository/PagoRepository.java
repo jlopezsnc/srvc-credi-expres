@@ -49,6 +49,10 @@ public interface PagoRepository extends JpaRepository<Pago, Integer>, JpaSpecifi
     @EntityGraph(attributePaths = {"cliente", "prestamo", "cuota"})
     List<Pago> findByLlaveIdempotenciaOrderByIdPago(String llaveIdempotencia);
 
+    /** Los renglones de una operación con ese estatus, para reimprimir su recibo. */
+    @EntityGraph(attributePaths = {"cliente", "prestamo", "prestamo.idModalidad", "cuota"})
+    List<Pago> findByFolioAndEstatusOrderByIdPago(String folio, EstatusPago estatus);
+
     /** Solo el folio (sin cargar la entidad), para después bloquear la operación completa. */
     @Query("SELECT p.folio FROM Pago p WHERE p.idPago = :idPago")
     Optional<String> findFolio(@Param("idPago") Integer idPago);
