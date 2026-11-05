@@ -55,6 +55,8 @@ public class ApiExceptionHandler {
         List<CampoError> campos = e.getBindingResult().getFieldErrors().stream()
                 .map(error -> new CampoError(error.getField(), error.getDefaultMessage()))
                 .toList();
+        int MensajeValidacion;
+
         MensajeValidacion mensaje = e.getParameter().getParameterType().getAnnotation(MensajeValidacion.class);
         return respuesta(HttpStatus.BAD_REQUEST, mensaje == null ? MENSAJE_VALIDACION : mensaje.value(), campos);
     }

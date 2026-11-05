@@ -1,9 +1,0 @@
-# Certificado HTTPS gratuito, emitido y renovado por Google.
-# Se activa cuando el dominio ya apunta a la IP fija crediexpress-ip (puede tardar hasta 60 min).
-apiVersion: networking.gke.io/v1
-kind: ManagedCertificate
-metadata:
-  name: crediexpress-cert
-spec:
-  domains:
-    - __DOMINIO__

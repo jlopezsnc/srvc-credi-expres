@@ -8,7 +8,7 @@ import java.time.ZoneId;
 
 /**
  * "Hoy" lo decide el back con la hora de México, no el reloj del navegador ni el del servidor
- * (en GKE corre en UTC). Los servicios reciben el {@link Clock} inyectado para poder probarlos
+ * (que podría estar en otra zona). Los servicios reciben el {@link Clock} inyectado para poder probarlos
  * con una fecha fija.
  */
 @Configuration

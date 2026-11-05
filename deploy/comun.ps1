@@ -33,12 +33,28 @@ function Invoke-Paso([string] $Nombre, [scriptblock] $Accion) {
     if ($LASTEXITCODE -ne 0) { throw "Fallo: $Nombre (codigo $LASTEXITCODE). Se detiene el proceso." }
 }
 
-# Reemplaza los marcadores __NOMBRE__ de los manifiestos con los valores de variables.psd1.
-function Convert-Manifiesto([string] $Contenido, [hashtable] $Valores) {
-    foreach ($par in $Valores.GetEnumerator()) {
-        $Contenido = $Contenido.Replace("__$($par.Key)__", [string] $par.Value)
+# Nombres derivados de variables.psd1 que usan varios scripts.
+function Get-Nombres([hashtable] $v) {
+    return @{
+        SaBack     = "crediexpress-back@$($v.ProyectoGcp).iam.gserviceaccount.com"
+        SaVm       = "crediexpress-vm@$($v.ProyectoGcp).iam.gserviceaccount.com"
+        IpVm       = "$($v.Vm)-ip"
+        TagVm      = 'crediexpress-mysql'
+        Repositorio = "$($v.Region)-docker.pkg.dev/$($v.ProyectoGcp)/crediexpress"
     }
-    $sinReemplazar = [regex]::Matches($Contenido, '__[A-Z_]+__') | ForEach-Object { $_.Value } | Sort-Object -Unique
-    if ($sinReemplazar) { throw "Marcadores sin valor en los manifiestos: $($sinReemplazar -join ', ')" }
-    return $Contenido
+}
+
+# Estado que publica deploy/vm/instalar-mysql.sh (instalando | listo | error en la linea N).
+function Get-EstadoVm([hashtable] $v) {
+    $anterior = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    try {
+        $valor = gcloud compute instances get-guest-attributes $v.Vm --zone=$($v.Zona) `
+            --query-path=crediexpress/estado --format='value(value)' 2>$null
+        if ($LASTEXITCODE -ne 0) { return '' }
+        return [string] $valor
+    }
+    finally {
+        $ErrorActionPreference = $anterior
+    }
 }

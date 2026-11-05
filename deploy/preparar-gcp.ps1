@@ -3,9 +3,18 @@
     Crea la infraestructura de GCP de Credi Express. Se corre UNA vez (si algo ya existe, lo salta).
 
 .DESCRIPTION
-    APIs, Artifact Registry, GKE Autopilot con Secret Manager, Cloud SQL (MySQL, IP privada),
-    secreto de la base, cuenta de servicio con Workload Identity, Cloud Armor, política SSL e IP fija.
-    Requiere gcloud con sesión iniciada (gcloud auth login) y permisos de Owner o Editor en el proyecto.
+    Arquitectura de costo cero (docs/DESPLIEGUE-GCP.md):
+      Firebase Hosting (front) --/api/**--> Cloud Run (back) --IP interna--> VM e2-micro con MySQL 8
+
+    Crea: APIs, Artifact Registry (con limpieza de imágenes viejas), Private Google Access en la
+    subred, IP interna fija para la VM, reglas de firewall, contraseña de la base en Secret Manager
+    (generada aquí, nunca se muestra), cuentas de servicio, bucket de respaldos y la VM.
+
+    La VM se crea con una IP externa TEMPORAL solo para instalar MySQL; al terminar se le quita
+    (sin IP externa no hay costo de IP ni puerta de entrada desde internet).
+
+    Requiere gcloud con sesión iniciada (gcloud auth login), permisos de Owner en el proyecto y la
+    facturación activa (plan Blaze en Firebase); el uso se mantiene dentro de la capa gratuita.
 
 .EXAMPLE
     .\deploy\preparar-gcp.ps1
@@ -17,9 +26,10 @@ param(
 
 . "$PSScriptRoot\comun.ps1"
 $v = Read-Variables $ArchivoVariables
+$n = Get-Nombres $v
 $p = $v.ProyectoGcp
 $r = $v.Region
-$sa = "crediexpress-back@$p.iam.gserviceaccount.com"
+$z = $v.Zona
 
 # Ejecuta $Crear solo si $Existe falla (el recurso no existe todavía).
 function Confirm-Recurso([string] $Nombre, [scriptblock] $Existe, [scriptblock] $Crear) {
@@ -27,64 +37,81 @@ function Confirm-Recurso([string] $Nombre, [scriptblock] $Existe, [scriptblock] 
     Invoke-Paso "Crear $Nombre" $Crear
 }
 
-Invoke-Paso 'Seleccionar proyecto' { gcloud config set project $p }
-
-Invoke-Paso 'Habilitar APIs' {
-    gcloud services enable container.googleapis.com artifactregistry.googleapis.com `
-        sqladmin.googleapis.com secretmanager.googleapis.com compute.googleapis.com `
-        servicenetworking.googleapis.com identitytoolkit.googleapis.com
+# Archivo temporal UTF-8 sin BOM (gcloud no acepta el BOM en JSON).
+function New-ArchivoTemporal([string] $Contenido) {
+    $archivo = [System.IO.Path]::GetTempFileName()
+    [System.IO.File]::WriteAllText($archivo, $Contenido)
+    return $archivo
 }
 
+Invoke-Paso 'Seleccionar proyecto' { gcloud config set project $p }
+
+$facturacion = gcloud billing projects describe $p --format='value(billingEnabled)'
+if ($facturacion -ne 'True') {
+    throw "El proyecto $p no tiene facturación activa. Cámbialo al plan Blaze (Consola de Firebase > Uso y facturación) y vuelve a correr el script."
+}
+
+Invoke-Paso 'Habilitar APIs' {
+    gcloud services enable run.googleapis.com artifactregistry.googleapis.com compute.googleapis.com `
+        secretmanager.googleapis.com iap.googleapis.com storage.googleapis.com `
+        identitytoolkit.googleapis.com firebasehosting.googleapis.com
+}
+
+# --- Artifact Registry: solo 0.5 GB gratis, así que se conservan las 2 imágenes más recientes ---
 Confirm-Recurso 'Artifact Registry crediexpress' `
     { gcloud artifacts repositories describe crediexpress --location=$r } `
     { gcloud artifacts repositories create crediexpress --repository-format=docker --location=$r }
 
-# --- Red privada para Cloud SQL ---
-Confirm-Recurso 'rango privado google-managed-services' `
-    { gcloud compute addresses describe google-managed-services --global } `
-    { gcloud compute addresses create google-managed-services --global --purpose=VPC_PEERING --prefix-length=16 --network=default }
-
-Confirm-Recurso 'conexión VPC con los servicios de Google' `
-    {
-        $conexiones = gcloud services vpc-peerings list --network=default --service=servicenetworking.googleapis.com --format='value(peering)'
-        if (-not $conexiones) { cmd /c exit 1 }
-    } `
-    { gcloud services vpc-peerings connect --service=servicenetworking.googleapis.com --ranges=google-managed-services --network=default }
-
-# --- Clúster ---
-Confirm-Recurso "clúster GKE Autopilot $($v.Cluster) (tarda ~10 min)" `
-    { gcloud container clusters describe $v.Cluster --region=$r } `
-    { gcloud container clusters create-auto $v.Cluster --region=$r }
-
-Invoke-Paso 'Activar add-on de Secret Manager en el clúster' {
-    gcloud container clusters update $v.Cluster --region=$r --enable-secret-manager
+$politica = New-ArchivoTemporal @'
+[
+  { "name": "conservar-recientes", "action": { "type": "Keep" }, "mostRecentVersions": { "keepCount": 2 } },
+  { "name": "borrar-el-resto", "action": { "type": "Delete" }, "condition": { "tagState": "ANY" } }
+]
+'@
+try {
+    Invoke-Paso 'Limpieza automática de imágenes viejas' {
+        gcloud artifacts repositories set-cleanup-policies crediexpress --location=$r --policy=$politica --no-dry-run | Out-Null
+    }
 }
+finally { Remove-Item $politica -Force }
 
-# --- Cloud SQL ---
-Confirm-Recurso "Cloud SQL $($v.InstanciaSql) (tarda ~10 min)" `
-    { gcloud sql instances describe $v.InstanciaSql } `
+# --- Red: la VM no tendrá IP externa; llega a Secret Manager y Cloud Storage por Private Google Access ---
+Invoke-Paso 'Private Google Access en la subred default' {
+    gcloud compute networks subnets update default --region=$r --enable-private-ip-google-access
+}
+$rangoSubred = gcloud compute networks subnets describe default --region=$r --format='value(ipCidrRange)'
+if (-not $rangoSubred) { throw "No se encontró la subred default en $r." }
+
+Confirm-Recurso "IP interna fija $($n.IpVm)" `
+    { gcloud compute addresses describe $n.IpVm --region=$r } `
+    { gcloud compute addresses create $n.IpVm --region=$r --subnet=default }
+$ipVm = gcloud compute addresses describe $n.IpVm --region=$r --format='value(address)'
+
+# Cloud Run (Direct VPC egress) toma IPs de la subred; solo eso y el túnel de IAP llegan a MySQL.
+Confirm-Recurso 'firewall crediexpress-mysql-desde-back' `
+    { gcloud compute firewall-rules describe crediexpress-mysql-desde-back } `
     {
-        gcloud sql instances create $v.InstanciaSql --database-version=MYSQL_8_0 --region=$r `
-            --tier=db-f1-micro --network="projects/$p/global/networks/default" --no-assign-ip `
-            --backup --enable-bin-log --storage-auto-increase
+        gcloud compute firewall-rules create crediexpress-mysql-desde-back --network=default `
+            --direction=INGRESS --action=allow --rules=tcp:3306 `
+            --source-ranges=$rangoSubred --target-tags=$($n.TagVm)
+    }
+# 35.235.240.0/20 es el rango fijo de IAP: SSH y MySQL solo por túnel autenticado con tu cuenta.
+Confirm-Recurso 'firewall crediexpress-mysql-desde-iap' `
+    { gcloud compute firewall-rules describe crediexpress-mysql-desde-iap } `
+    {
+        gcloud compute firewall-rules create crediexpress-mysql-desde-iap --network=default `
+            --direction=INGRESS --action=allow --rules='tcp:22,tcp:3306' `
+            --source-ranges=35.235.240.0/20 --target-tags=$($n.TagVm)
     }
 
-Confirm-Recurso "base de datos $($v.BaseDatos)" `
-    { gcloud sql databases describe $v.BaseDatos --instance=$v.InstanciaSql } `
-    { gcloud sql databases create $v.BaseDatos --instance=$v.InstanciaSql --charset=utf8mb4 }
-
-# La contraseña se genera aquí, va directo a Cloud SQL y a Secret Manager, y nunca se muestra.
+# --- Contraseña de la base: se genera aquí, va directo a Secret Manager y nunca se muestra ---
 if (-not (Test-Comando { gcloud secrets describe db-password })) {
     $bytes = New-Object byte[] 32
     [System.Security.Cryptography.RandomNumberGenerator]::Create().GetBytes($bytes)
+    # Solo letras y números: la VM la usa dentro de una sentencia SQL.
     $password = [Convert]::ToBase64String($bytes) -replace '[+/=]', ''
-    $temporal = [System.IO.Path]::GetTempFileName()
+    $temporal = New-ArchivoTemporal $password
     try {
-        # Sin salto de línea al final: el archivo es exactamente la contraseña.
-        [System.IO.File]::WriteAllText($temporal, $password)
-        Invoke-Paso "Crear usuario $($v.UsuarioBd) en Cloud SQL" {
-            gcloud sql users create $v.UsuarioBd --instance=$v.InstanciaSql --host='%' --password=$password
-        }
         Invoke-Paso 'Guardar contraseña en Secret Manager (db-password)' {
             gcloud secrets create db-password --replication-policy=automatic --data-file=$temporal
         }
@@ -98,49 +125,85 @@ else {
     Write-Host '    (ya existe) secreto db-password' -ForegroundColor DarkGray
 }
 
-# --- Identidad del back (Workload Identity) ---
+# --- Cuentas de servicio: cada una con lo mínimo ---
 Confirm-Recurso 'cuenta de servicio crediexpress-back' `
-    { gcloud iam service-accounts describe $sa } `
-    { gcloud iam service-accounts create crediexpress-back --display-name='Credi Express back' }
+    { gcloud iam service-accounts describe $n.SaBack } `
+    { gcloud iam service-accounts create crediexpress-back --display-name='Credi Express back (Cloud Run)' }
+Confirm-Recurso 'cuenta de servicio crediexpress-vm' `
+    { gcloud iam service-accounts describe $n.SaVm } `
+    { gcloud iam service-accounts create crediexpress-vm --display-name='Credi Express VM de MySQL' }
 
-Invoke-Paso 'Permiso: conectarse a Cloud SQL' {
-    gcloud projects add-iam-policy-binding $p --member="serviceAccount:$sa" --role=roles/cloudsql.client --condition=None | Out-Null
+foreach ($sa in @($n.SaBack, $n.SaVm)) {
+    Invoke-Paso "Permiso: $sa lee solo el secreto db-password" {
+        gcloud secrets add-iam-policy-binding db-password --member="serviceAccount:$sa" `
+            --role=roles/secretmanager.secretAccessor | Out-Null
+    }
 }
-Invoke-Paso 'Permiso: leer solo el secreto db-password' {
-    gcloud secrets add-iam-policy-binding db-password --member="serviceAccount:$sa" --role=roles/secretmanager.secretAccessor | Out-Null
-}
-Invoke-Paso 'Enlazar la cuenta de Kubernetes con la de GCP' {
-    gcloud iam service-accounts add-iam-policy-binding $sa --role=roles/iam.workloadIdentityUser `
-        --member="serviceAccount:$p.svc.id.goog[$($v.Namespace)/crediexpress-back]" | Out-Null
+Invoke-Paso 'Permiso: la VM escribe logs' {
+    gcloud projects add-iam-policy-binding $p --member="serviceAccount:$($n.SaVm)" `
+        --role=roles/logging.logWriter --condition=None | Out-Null
 }
 
-# --- Cloud Armor, TLS e IP ---
-Confirm-Recurso 'política Cloud Armor crediexpress-armor' `
-    { gcloud compute security-policies describe crediexpress-armor } `
+# --- Bucket de respaldos: privado, en la región gratuita, borra lo de más de 30 días ---
+$bucket = "gs://$($v.BucketRespaldos)"
+Confirm-Recurso "bucket $bucket" `
+    { gcloud storage buckets describe $bucket } `
     {
-        gcloud compute security-policies create crediexpress-armor --description='Credi Express'
-        if ($LASTEXITCODE -ne 0) { return }
-        # Máximo 100 peticiones por minuto por IP.
-        gcloud compute security-policies rules create 1000 --security-policy=crediexpress-armor `
-            --expression='true' --action=throttle --rate-limit-threshold-count=100 `
-            --rate-limit-threshold-interval-sec=60 --conform-action=allow --exceed-action=deny-429 --enforce-on-key=IP
-        if ($LASTEXITCODE -ne 0) { return }
-        # Reglas administradas OWASP: inyección SQL y XSS.
-        gcloud compute security-policies rules create 900 --security-policy=crediexpress-armor `
-            --expression="evaluatePreconfiguredWaf('sqli-v33-stable') || evaluatePreconfiguredWaf('xss-v33-stable')" `
-            --action=deny-403
+        gcloud storage buckets create $bucket --location=$r --default-storage-class=STANDARD `
+            --uniform-bucket-level-access --public-access-prevention
+    }
+$ciclo = New-ArchivoTemporal '{ "rule": [ { "action": { "type": "Delete" }, "condition": { "age": 30 } } ] }'
+try {
+    Invoke-Paso 'Borrar respaldos de más de 30 días' { gcloud storage buckets update $bucket --lifecycle-file=$ciclo }
+}
+finally { Remove-Item $ciclo -Force }
+# objectCreator: puede subir respaldos pero no leerlos, borrarlos ni sobrescribirlos.
+Invoke-Paso 'Permiso: la VM sube respaldos al bucket' {
+    gcloud storage buckets add-iam-policy-binding $bucket --member="serviceAccount:$($n.SaVm)" `
+        --role=roles/storage.objectCreator | Out-Null
+}
+
+# --- VM e2-micro (capa gratuita: e2-micro + 30 GB de disco ESTÁNDAR en us-west1/us-central1/us-east1) ---
+$script = Join-Path $PSScriptRoot 'vm\instalar-mysql.sh'
+Confirm-Recurso "VM $($v.Vm)" `
+    { gcloud compute instances describe $v.Vm --zone=$z } `
+    {
+        gcloud compute instances create $v.Vm --zone=$z --machine-type=e2-micro `
+            --image-family=ubuntu-2404-lts-amd64 --image-project=ubuntu-os-cloud `
+            --boot-disk-size=30GB --boot-disk-type=pd-standard `
+            --subnet=default --private-network-ip=$ipVm `
+            --service-account=$($n.SaVm) --scopes=cloud-platform `
+            --tags=$($n.TagVm) `
+            --shielded-secure-boot --shielded-vtpm --shielded-integrity-monitoring `
+            --deletion-protection `
+            --metadata="enable-guest-attributes=TRUE,enable-oslogin=TRUE,base-datos=$($v.BaseDatos),usuario-bd=$($v.UsuarioBd),bucket-respaldos=$($v.BucketRespaldos)" `
+            --metadata-from-file="startup-script=$script"
     }
 
-Confirm-Recurso 'política SSL crediexpress-ssl (TLS 1.2+)' `
-    { gcloud compute ssl-policies describe crediexpress-ssl --global } `
-    { gcloud compute ssl-policies create crediexpress-ssl --profile=MODERN --min-tls-version=1.2 --global }
+# El script de la VM publica su avance; MySQL tarda ~5-10 min en instalarse en una e2-micro.
+Write-Host '==> Esperando la instalación de MySQL en la VM (hasta 20 min)' -ForegroundColor Cyan
+$limite = (Get-Date).AddMinutes(20)
+do {
+    Start-Sleep -Seconds 20
+    $estado = Get-EstadoVm $v
+    Write-Host "    estado: $(if ($estado) { $estado } else { 'arrancando' })" -ForegroundColor DarkGray
+    if ($estado -like 'error*') {
+        throw "La instalación falló ($estado). Revisa: gcloud compute instances get-serial-port-output $($v.Vm) --zone=$z"
+    }
+} while ($estado -ne 'listo' -and (Get-Date) -lt $limite)
+if ($estado -ne 'listo') {
+    throw "La instalación no terminó a tiempo. Revisa: gcloud compute instances get-serial-port-output $($v.Vm) --zone=$z"
+}
 
-Confirm-Recurso 'IP fija crediexpress-ip' `
-    { gcloud compute addresses describe crediexpress-ip --global } `
-    { gcloud compute addresses create crediexpress-ip --global }
+# Ya instalado: se quita la IP externa temporal.
+$accesoExterno = gcloud compute instances describe $v.Vm --zone=$z --format='value(networkInterfaces[0].accessConfigs[0].name)'
+if ($accesoExterno) {
+    Invoke-Paso 'Quitar la IP externa temporal de la VM' {
+        gcloud compute instances delete-access-config $v.Vm --zone=$z --access-config-name=$accesoExterno
+    }
+}
 
-$ip = gcloud compute addresses describe crediexpress-ip --global --format='value(address)'
 Write-Host ''
 Write-Host 'Infraestructura lista.' -ForegroundColor Green
-Write-Host "Siguiente: en tu proveedor de dominio crea un registro A  $($v.Dominio) -> $ip" -ForegroundColor Yellow
-Write-Host "y agrega $($v.Dominio) en Firebase > Authentication > Configuracion > Dominios autorizados." -ForegroundColor Yellow
+Write-Host "MySQL en $ipVm (solo red interna). Siguiente: .\deploy\migrar-bd.ps1 (copia la base local a la VM)" -ForegroundColor Yellow
+Write-Host 'Recomendado: alerta de presupuesto de 1 USD en Consola de GCP > Facturación > Presupuestos y alertas.' -ForegroundColor Yellow

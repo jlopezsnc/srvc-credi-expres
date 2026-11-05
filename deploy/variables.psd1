@@ -1,22 +1,21 @@
-# Variables de despliegue en GCP. NO son secretos (los secretos van en Secret Manager),
-# por eso este archivo sí se sube al repo. Reemplazar cada 'CAMBIAR' antes de usar los scripts.
+﻿# Variables de despliegue en GCP. NO son secretos (los secretos van en Secret Manager),
+# por eso este archivo sí se sube al repo.
 @{
-    # ID del proyecto de GCP (Consola de GCP > selector de proyectos > columna "ID").
-    ProyectoGcp       = 'CAMBIAR'
+    # Proyecto de GCP = proyecto de Firebase. Debe ser el mismo: Firebase Hosting solo puede enviar
+    # /api/** a un servicio de Cloud Run de su propio proyecto.
+    ProyectoGcp       = 'credi-express-app'
+    FirebaseProjectId = 'credi-express-app'
 
-    # Región donde viven el clúster, Cloud SQL y Artifact Registry.
+    # La e2-micro solo es gratis en us-west1, us-central1 o us-east1. Cloud Run, la VM y el bucket
+    # de respaldos van en la misma región (y la VM en una zona de ella) para que el tráfico sea interno.
     Region            = 'us-central1'
-
-    # Proyecto de Firebase. Si agregaste Firebase a tu proyecto de GCP, es el mismo ID.
-    FirebaseProjectId = 'CAMBIAR'
-
-    # Dominio público de la aplicación (debe apuntar a la IP fija que crea preparar-gcp.ps1).
-    Dominio           = 'CAMBIAR'
+    Zona              = 'us-central1-a'
 
     # Nombres de los recursos (se pueden dejar así).
-    Cluster           = 'crediexpress'
-    InstanciaSql      = 'crediexpress-db'
+    ServicioBack      = 'crediexpress-back'
+    Vm                = 'crediexpress-mysql'
     BaseDatos         = 'prestamos'
     UsuarioBd         = 'crediexpress_app'
-    Namespace         = 'default'
+    # Debe ser único en todo Cloud Storage; si ya existe en otra cuenta, cambiarlo.
+    BucketRespaldos   = 'credi-express-app-respaldos-bd'
 }
