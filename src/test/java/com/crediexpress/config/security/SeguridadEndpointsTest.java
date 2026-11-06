@@ -86,6 +86,17 @@ class SeguridadEndpointsTest {
     }
 
     @Test
+    void tokenValidoDeUsuarioFueraDeLaListaResponde403() throws Exception {
+        mockMvc.perform(get(LISTAR_CLIENTES).with(jwt().jwt(j -> j.subject("uid-ajeno"))))
+                .andExpect(status().isForbidden());
+        mockMvc.perform(post(AGREGAR_CLIENTE).with(jwt().jwt(j -> j.subject("uid-ajeno")))
+                        .contentType(MediaType.APPLICATION_JSON).content(CLIENTE_JSON))
+                .andExpect(status().isForbidden());
+
+        verifyNoInteractions(clienteService);
+    }
+
+    @Test
     void conTokenPuedeConsultarClientes() throws Exception {
         when(clienteService.listarCliente()).thenReturn(List.of(ClienteResponse.builder().idCliente(1).build()));
 
@@ -95,7 +106,7 @@ class SeguridadEndpointsTest {
     @Test
     void conTokenPuedeAgregarClientes() throws Exception {
         when(clienteService.validarRequest(any())).thenReturn(false);
-        when(clienteService.guardarCliente(any())).thenReturn(ClienteResponse.builder().idCliente(1).build());
+        when(clienteService.guardarCliente(any(), any())).thenReturn(ClienteResponse.builder().idCliente(1).build());
 
         mockMvc.perform(post(AGREGAR_CLIENTE).with(jwt())
                         .contentType(MediaType.APPLICATION_JSON).content(CLIENTE_JSON))
@@ -104,7 +115,7 @@ class SeguridadEndpointsTest {
 
     @Test
     void conTokenPuedeGenerarPrestamos() throws Exception {
-        when(estadoPrestamosService.guardarEstadoPrestamos(any()))
+        when(estadoPrestamosService.guardarEstadoPrestamos(any(), any()))
                 .thenReturn(CalcularPagoResponse.builder().plazosGenerados(8).resultado("OK").build());
 
         mockMvc.perform(post(GENERAR_PRESTAMO).with(jwt())

@@ -2,6 +2,9 @@
 # Solo se usa en el perfil dev (IntelliJ o ./gradlew bootRun).
 DB_PASSWORD=masterkey
 FIREBASE_PROJECT_ID=credi-express-app
+# UIDs de Firebase de los usuarios del negocio (Authentication > Usuarios), separados por coma.
+# Sin esta línea el back rechaza todas las peticiones (403).
+USUARIOS_PERMITIDOS=uid1,uid2
 # Opcionales (estos son los valores por defecto):
 # DB_URL=jdbc:mysql://localhost:3306/prestamos
 # DB_USERNAME=root

@@ -43,3 +43,6 @@ config/application-local.properties
 
 ### Instalador de Claude Code (no es parte del proyecto) ###
 install.cmd
+
+### UIDs de los usuarios del negocio (los lee deploy/deploy-back.ps1) ###
+deploy/usuarios-permitidos.txt

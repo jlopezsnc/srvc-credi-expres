@@ -37,6 +37,14 @@ $env:JAVA_HOME = $JavaHome
 
 if (git tag --list "back-v$Version") { throw "La versión $Version ya existe (tag back-v$Version). Usa una versión nueva." }
 
+# Lista blanca del back: UIDs de Firebase en deploy/usuarios-permitidos.txt (ignorado por git).
+$archivoUsuarios = Join-Path $PSScriptRoot 'usuarios-permitidos.txt'
+if (-not (Test-Path $archivoUsuarios)) { throw "Falta $archivoUsuarios (un UID de Firebase por línea). Sin él nadie podría entrar." }
+$usuariosPermitidos = @(Get-Content $archivoUsuarios | ForEach-Object { $_.Trim() } | Where-Object { $_ -and -not $_.StartsWith('#') })
+if ($usuariosPermitidos.Count -eq 0) { throw "$archivoUsuarios no tiene UIDs." }
+$invalidos = @($usuariosPermitidos | Where-Object { $_ -notmatch '^[A-Za-z0-9]{20,128}$' })
+if ($invalidos.Count -gt 0) { throw "UIDs con formato raro en ${archivoUsuarios}: $($invalidos -join ', ')" }
+
 $ipVm = gcloud compute addresses describe $n.IpVm --region=$($v.Region) --project=$($v.ProyectoGcp) --format='value(address)'
 if (-not $ipVm) { throw "No existe la IP $($n.IpVm). Corre primero .\deploy\preparar-gcp.ps1" }
 
@@ -45,33 +53,41 @@ Invoke-Paso 'Construir imagen' { docker build -t $imagen . }
 Invoke-Paso 'Autorizar Docker con Artifact Registry' { gcloud auth configure-docker "$($v.Region)-docker.pkg.dev" --quiet }
 Invoke-Paso 'Publicar imagen' { docker push $imagen }
 
-$variablesEntorno = @(
-    'SPRING_PROFILES_ACTIVE=cloudrun'
+$variablesEntorno = [ordered]@{
+    SPRING_PROFILES_ACTIVE = 'cloudrun'
     # Misma zona que el MySQL de la VM (-06:00); sin esto la JVM corre en UTC y las columnas
     # TIMESTAMP (cliente.fecha_alta, calculadora_prestamos.fecha) se leerían 6 horas corridas.
-    'TZ=America/Mexico_City'
-    "FIREBASE_PROJECT_ID=$($v.FirebaseProjectId)"
-    "DB_URL=jdbc:mysql://${ipVm}:3306/$($v.BaseDatos)?sslMode=REQUIRED"
-    "DB_USERNAME=$($v.UsuarioBd)"
-) -join ','
-
-Invoke-Paso 'Desplegar en Cloud Run' {
-    # --allow-unauthenticated: la llamada llega de Firebase Hosting; quien valida es Spring Security
-    #   (todo endpoint, salvo el health, exige el ID token de Firebase).
-    # --network/--subnet: Direct VPC egress, sin conector (el conector cobra aunque no se use).
-    # --vpc-egress=private-ranges-only: solo el tráfico a IPs privadas (MySQL) va por la VPC; las
-    #   llaves públicas de Firebase se descargan por internet como siempre.
-    # --cpu-boost: más CPU solo durante el arranque.
-    gcloud run deploy $v.ServicioBack --project=$($v.ProyectoGcp) --region=$($v.Region) `
-        --image=$imagen --service-account=$($n.SaBack) `
-        --allow-unauthenticated --ingress=all --port=8080 `
-        --network=default --subnet=default --vpc-egress=private-ranges-only `
-        --cpu=1 --memory=1Gi --concurrency=20 --timeout=60 `
-        --min-instances=0 --max-instances=2 --cpu-boost `
-        --set-env-vars=$variablesEntorno `
-        --set-secrets='/etc/secrets/db-password=db-password:latest' `
-        --labels="app=crediexpress,version=$($Version -replace '\.', '-')"
+    TZ                     = 'America/Mexico_City'
+    FIREBASE_PROJECT_ID    = $v.FirebaseProjectId
+    DB_URL                 = "jdbc:mysql://${ipVm}:3306/$($v.BaseDatos)?sslMode=REQUIRED"
+    DB_USERNAME            = $v.UsuarioBd
+    USUARIOS_PERMITIDOS    = $usuariosPermitidos -join ','
 }
+# Se pasan en un archivo YAML: con --set-env-vars la coma de la lista de UIDs se tomaría como
+# separador de variables.
+$archivoEntorno = [IO.Path]::GetTempFileName()
+[IO.File]::WriteAllText($archivoEntorno, (($variablesEntorno.GetEnumerator() | ForEach-Object { "$($_.Key): '$($_.Value)'" }) -join "`n"))
+
+try {
+    Invoke-Paso 'Desplegar en Cloud Run' {
+        # --allow-unauthenticated: la llamada llega de Firebase Hosting; quien valida es Spring Security
+        #   (todo endpoint, salvo el health, exige el ID token de Firebase de un usuario de la lista).
+        # --network/--subnet: Direct VPC egress, sin conector (el conector cobra aunque no se use).
+        # --vpc-egress=private-ranges-only: solo el tráfico a IPs privadas (MySQL) va por la VPC; las
+        #   llaves públicas de Firebase se descargan por internet como siempre.
+        # --cpu-boost: más CPU solo durante el arranque.
+        gcloud run deploy $v.ServicioBack --project=$($v.ProyectoGcp) --region=$($v.Region) `
+            --image=$imagen --service-account=$($n.SaBack) `
+            --allow-unauthenticated --ingress=all --port=8080 `
+            --network=default --subnet=default --vpc-egress=private-ranges-only `
+            --cpu=1 --memory=1Gi --concurrency=20 --timeout=60 `
+            --min-instances=0 --max-instances=2 --cpu-boost `
+            --env-vars-file=$archivoEntorno `
+            --set-secrets='/etc/secrets/db-password=db-password:latest' `
+            --labels="app=crediexpress,version=$($Version -replace '\.', '-')"
+    }
+}
+finally { Remove-Item $archivoEntorno -Force }
 
 $url = gcloud run services describe $v.ServicioBack --project=$($v.ProyectoGcp) --region=$($v.Region) --format='value(status.url)'
 Write-Host "==> Probando $url/api/actuator/health" -ForegroundColor Cyan

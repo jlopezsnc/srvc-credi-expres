@@ -159,7 +159,7 @@ public class ConvenioServiceImpl implements ConvenioService {
         }
 
         Plan plan = plan(saldo, request, condiciones);
-        Registrado nuevo = registroPrestamo.registrar(titular, condiciones.modalidad(), plan, hoy);
+        Registrado nuevo = registroPrestamo.registrar(titular, condiciones.modalidad(), plan, hoy, usuario);
         porConvenir.forEach(EstadoPrestamos::pasarAConvenio);
 
         Convenio convenio = Convenio.builder()

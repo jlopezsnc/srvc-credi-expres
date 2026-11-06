@@ -71,4 +71,8 @@ public class CalculadoraPrestamos {
     @Column(name = "interes_generado")
     private BigDecimal interesGenerado;
 
+    /** Auditoría (V7): correo o uid del token. NULL en los préstamos anteriores a la auditoría. */
+    @Column(name = "registrado_por", updatable = false)
+    private String registradoPor;
+
 }

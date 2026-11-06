@@ -22,4 +22,6 @@ public class ClienteResponse {
     private String domicilioCiudad;
     private String telefono;
     private String correoElectronico;
+    /** ACTIVO o INACTIVO. */
+    private String estatusCliente;
 }

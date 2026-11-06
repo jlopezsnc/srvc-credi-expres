@@ -15,5 +15,6 @@ public interface EstadoPrestamosService {
     List<EstadoPrestamosResponse> getEstadoPrestamosByIdCliente(Integer id);
 
     /** Calcula y guarda el préstamo con su calendario de cuotas, todo o nada. */
-    CalcularPagoResponse guardarEstadoPrestamos(CalculadoraPagosRequest request);
+    /** @param usuario quién lo genera (correo o uid del token), para auditoría. */
+    CalcularPagoResponse guardarEstadoPrestamos(CalculadoraPagosRequest request, String usuario);
 }

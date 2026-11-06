@@ -19,6 +19,7 @@ import org.springframework.test.web.servlet.MockMvc;
 import java.math.BigDecimal;
 
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
@@ -46,7 +47,7 @@ class EstadoPrestamosControllerTest {
 
     @Test
     void aceptaElCuerpoQueEnviaLaPantallaYDevuelveLoQueCalculoElBack() throws Exception {
-        when(estadoPrestamosService.guardarEstadoPrestamos(any())).thenReturn(CalcularPagoResponse.builder()
+        when(estadoPrestamosService.guardarEstadoPrestamos(any(), eq("user"))).thenReturn(CalcularPagoResponse.builder()
                 .plazosGenerados(8)
                 .resultado("Prestamo generado correctamente")
                 .idPrestamo(77)

@@ -30,7 +30,9 @@ public class RegistroPrestamo {
     public record Registrado(CalculadoraPrestamos prestamo, List<EstadoPrestamos> cuotas) {
     }
 
-    public Registrado registrar(Cliente cliente, Modalidad modalidad, Plan plan, LocalDate fechaSolicitud) {
+    /** @param usuario quién lo genera (correo o uid del token), para auditoría. */
+    public Registrado registrar(Cliente cliente, Modalidad modalidad, Plan plan, LocalDate fechaSolicitud,
+                                String usuario) {
         CalculadoraPrestamos prestamo = prestamoRepository.save(CalculadoraPrestamos.builder()
                 .idCliente(cliente)
                 .idModalidad(modalidad)
@@ -42,6 +44,7 @@ public class RegistroPrestamo {
                 .interesGenerado(plan.interes())
                 .fechaSolicitud(fechaSolicitud)
                 .fechaInicioCredito(plan.cuotas().getFirst().fechaVencimiento())
+                .registradoPor(usuario)
                 .build());
 
         List<EstadoPrestamos> cuotas = plan.cuotas().stream()

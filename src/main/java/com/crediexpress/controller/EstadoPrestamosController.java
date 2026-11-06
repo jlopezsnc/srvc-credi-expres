@@ -12,6 +12,9 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.PostMapping;
+import com.crediexpress.config.security.UsuarioAutenticado;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.PathVariable;
 
@@ -48,8 +51,10 @@ public class EstadoPrestamosController {
     /** Genera el préstamo y su calendario. El back calcula interés, total y cuotas (no los recibe). */
     @PostMapping(path = "/calcular-pagos", produces = "application/json")
     public ResponseEntity<GenericResponse> guardarEstadoPrestamo(
-            @Valid @RequestBody CalculadoraPagosRequest calculadoraPagosRequest) {
-        CalcularPagoResponse generado = estadoPrestamosService.guardarEstadoPrestamos(calculadoraPagosRequest);
+            @Valid @RequestBody CalculadoraPagosRequest calculadoraPagosRequest,
+            @AuthenticationPrincipal Jwt token) {
+        CalcularPagoResponse generado = estadoPrestamosService.guardarEstadoPrestamos(
+                calculadoraPagosRequest, UsuarioAutenticado.de(token));
         return ResponseEntity.ok(
                 GenericResponse.builder()
                         .objetoResponse(generado)

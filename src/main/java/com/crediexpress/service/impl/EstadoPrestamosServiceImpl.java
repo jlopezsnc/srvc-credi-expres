@@ -2,6 +2,7 @@ package com.crediexpress.service.impl;
 
 import com.crediexpress.dto.entity.CalculadoraPrestamos;
 import com.crediexpress.dto.entity.Cliente;
+import com.crediexpress.dto.entity.EstatusCliente;
 import com.crediexpress.dto.entity.EstadoPrestamos;
 import com.crediexpress.dto.entity.Modalidad;
 import com.crediexpress.dto.repository.ClienteRepository;
@@ -70,10 +71,13 @@ public class EstadoPrestamosServiceImpl implements EstadoPrestamosService {
 
     @Override
     @Transactional
-    public CalcularPagoResponse guardarEstadoPrestamos(CalculadoraPagosRequest request) {
+    public CalcularPagoResponse guardarEstadoPrestamos(CalculadoraPagosRequest request, String usuario) {
         LocalDate hoy = LocalDate.now(clock);
         Cliente cliente = clienteRepository.findById(request.idCliente())
                 .orElseThrow(() -> ApiException.noEncontrado("El cliente no existe."));
+        if (cliente.getEstatusCliente() == EstatusCliente.INACTIVO) {
+            throw ApiException.conflicto("El cliente está dado de baja. Reactívalo para darle un préstamo nuevo.");
+        }
         Modalidad modalidad = modalidadRepository.findById(request.idModalidad())
                 .orElseThrow(() -> invalido("idModalidad", "La periodicidad no existe."));
         Periodicidad periodicidad = Periodicidad.deDias(modalidad.getDiasActivos())
@@ -89,7 +93,7 @@ public class EstadoPrestamosServiceImpl implements EstadoPrestamosService {
         Plan plan = CalculadoraPrestamo.calcular(request.importeCredito(), request.tasaInteres(),
                 request.numeroCuota(), periodicidad, request.fechaInicioCredito());
 
-        Registrado registrado = registroPrestamo.registrar(cliente, modalidad, plan, hoy);
+        Registrado registrado = registroPrestamo.registrar(cliente, modalidad, plan, hoy, usuario);
         CalculadoraPrestamos prestamo = registrado.prestamo();
         List<EstadoPrestamos> cuotas = registrado.cuotas();
 

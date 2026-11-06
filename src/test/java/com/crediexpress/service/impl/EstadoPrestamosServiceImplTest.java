@@ -2,6 +2,7 @@ package com.crediexpress.service.impl;
 
 import com.crediexpress.dto.entity.CalculadoraPrestamos;
 import com.crediexpress.dto.entity.Cliente;
+import com.crediexpress.dto.entity.EstatusCliente;
 import com.crediexpress.dto.entity.EstadoCuota;
 import com.crediexpress.dto.entity.EstadoPrestamos;
 import com.crediexpress.dto.entity.Modalidad;
@@ -44,6 +45,7 @@ class EstadoPrestamosServiceImplTest {
     // 30 de octubre de 2026 a las 23:30 en México (ya es 31 en UTC): "hoy" debe ser el 30.
     private static final Clock RELOJ = Clock.fixed(Instant.parse("2026-10-31T05:30:00Z"), MEXICO);
     private static final LocalDate HOY = LocalDate.of(2026, 10, 30);
+    private static final String USUARIO = "cobrador@ejemplo.mx";
 
     @Mock
     private EstadoPrestamosRepository estadoPrestamosRepository;
@@ -87,10 +89,11 @@ class EstadoPrestamosServiceImplTest {
             return prestamo;
         });
 
-        CalcularPagoResponse respuesta = servicio.guardarEstadoPrestamos(peticion(14, HOY.plusDays(15)));
+        CalcularPagoResponse respuesta = servicio.guardarEstadoPrestamos(peticion(14, HOY.plusDays(15)), USUARIO);
 
         verify(calculadoraPrestamosRepository).save(prestamoGuardado.capture());
         CalculadoraPrestamos prestamo = prestamoGuardado.getValue();
+        assertThat(prestamo.getRegistradoPor()).isEqualTo(USUARIO);
         assertThat(prestamo.getTotalPagar()).isEqualTo(new BigDecimal("11040.00"));
         assertThat(prestamo.getInteresGenerado()).isEqualTo(new BigDecimal("5040.00"));
         assertThat(prestamo.getImporteCuota()).isEqualTo(new BigDecimal("788.57"));
@@ -118,7 +121,7 @@ class EstadoPrestamosServiceImplTest {
     void rechazaUnNumeroDePagosQueNoEsDeLaPeriodicidad() {
         conClienteYModalidad();
 
-        assertThatThrownBy(() -> servicio.guardarEstadoPrestamos(peticion(16, HOY)))
+        assertThatThrownBy(() -> servicio.guardarEstadoPrestamos(peticion(16, HOY), USUARIO))
                 .isInstanceOfSatisfying(ApiException.class, error -> {
                     assertThat(error.getStatus()).isEqualTo(HttpStatus.BAD_REQUEST);
                     assertThat(error.getCampos()).singleElement().satisfies(campo -> {
@@ -133,7 +136,7 @@ class EstadoPrestamosServiceImplTest {
     void rechazaUnPrimerPagoAnteriorAHoy() {
         conClienteYModalidad();
 
-        assertThatThrownBy(() -> servicio.guardarEstadoPrestamos(peticion(8, HOY.minusDays(1))))
+        assertThatThrownBy(() -> servicio.guardarEstadoPrestamos(peticion(8, HOY.minusDays(1)), USUARIO))
                 .isInstanceOfSatisfying(ApiException.class, error ->
                         assertThat(error.getCampos()).singleElement()
                                 .satisfies(campo -> assertThat(campo.campo()).isEqualTo("fechaInicioCredito")));
@@ -144,7 +147,7 @@ class EstadoPrestamosServiceImplTest {
         conClienteYModalidad();
         when(calculadoraPrestamosRepository.save(any())).thenAnswer(invocacion -> invocacion.getArgument(0));
 
-        servicio.guardarEstadoPrestamos(peticion(8, HOY));
+        servicio.guardarEstadoPrestamos(peticion(8, HOY), USUARIO);
 
         verify(estadoPrestamosRepository).saveAll(any());
     }
@@ -153,7 +156,7 @@ class EstadoPrestamosServiceImplTest {
     void clienteInexistenteResponde404() {
         when(clienteRepository.findById(1)).thenReturn(Optional.empty());
 
-        assertThatThrownBy(() -> servicio.guardarEstadoPrestamos(peticion(8, HOY)))
+        assertThatThrownBy(() -> servicio.guardarEstadoPrestamos(peticion(8, HOY), USUARIO))
                 .isInstanceOfSatisfying(ApiException.class,
                         error -> assertThat(error.getStatus()).isEqualTo(HttpStatus.NOT_FOUND));
     }
@@ -164,8 +167,20 @@ class EstadoPrestamosServiceImplTest {
         when(modalidadRepository.findById(2)).thenReturn(Optional.of(
                 Modalidad.builder().idModalidad(2).descripcion("Mensual").diasActivos(30).build()));
 
-        assertThatThrownBy(() -> servicio.guardarEstadoPrestamos(peticion(8, HOY)))
+        assertThatThrownBy(() -> servicio.guardarEstadoPrestamos(peticion(8, HOY), USUARIO))
                 .isInstanceOfSatisfying(ApiException.class,
                         error -> assertThat(error.getStatus()).isEqualTo(HttpStatus.BAD_REQUEST));
+    }
+
+    @Test
+    void clienteDadoDeBajaNoRecibePrestamosNuevos() {
+        Cliente inactivo = Cliente.builder().idCliente(1).nombreCompleto("CLIENTE PRUEBA")
+                .estatusCliente(EstatusCliente.INACTIVO).build();
+        when(clienteRepository.findById(1)).thenReturn(Optional.of(inactivo));
+
+        assertThatThrownBy(() -> servicio.guardarEstadoPrestamos(peticion(8, HOY), USUARIO))
+                .isInstanceOfSatisfying(ApiException.class,
+                        error -> assertThat(error.getStatus()).isEqualTo(HttpStatus.CONFLICT));
+        verify(calculadoraPrestamosRepository, never()).save(any());
     }
 }

@@ -329,7 +329,7 @@ class ConvenioServiceImplTest {
             when(saldosCuotas.calcular(de18)).thenReturn(List.of(
                     new CuotaConSaldo(c181, new BigDecimal("0.00"), new BigDecimal("2000.00"))));
             when(convenioRepository.findByLlaveIdempotencia(LLAVE.valor())).thenReturn(Optional.empty());
-            when(registroPrestamo.registrar(eq(maria), eq(semanal), any(), eq(HOY)))
+            when(registroPrestamo.registrar(eq(maria), eq(semanal), any(), eq(HOY), eq(USUARIO)))
                     .thenReturn(new Registrado(prestamoNuevo, List.of()));
             when(convenioRepository.save(any())).thenAnswer(invocacion -> {
                 Convenio convenio = invocacion.getArgument(0);
@@ -346,7 +346,7 @@ class ConvenioServiceImplTest {
             orden.verify(cuotaRepository).bloquearConSaldoDelPrestamo(12);
             orden.verify(cuotaRepository).bloquearConSaldoDelPrestamo(18);
 
-            verify(registroPrestamo).registrar(eq(maria), eq(semanal), planRegistrado.capture(), eq(HOY));
+            verify(registroPrestamo).registrar(eq(maria), eq(semanal), planRegistrado.capture(), eq(HOY), eq(USUARIO));
             assertThat(planRegistrado.getValue().monto()).isEqualTo(new BigDecimal("5240.00"));
             assertThat(planRegistrado.getValue().interes()).isEqualTo(new BigDecimal("0.00"));
             assertThat(List.of(c121, c122, c181)).allSatisfy(
@@ -387,7 +387,7 @@ class ConvenioServiceImplTest {
                         assertThat(e.getMessage()).contains("cambió");
                     });
 
-            verify(registroPrestamo, never()).registrar(any(), any(), any(), any());
+            verify(registroPrestamo, never()).registrar(any(), any(), any(), any(), any());
             verify(convenioRepository, never()).save(any());
             assertThat(c121.getEstadoPago()).isEqualTo(EstadoCuota.ABONO_PARCIAL.codigo());
         }
@@ -406,7 +406,7 @@ class ConvenioServiceImplTest {
             ResultadoOperacion<ConvenioResponse> resultado = servicio.generar(generacion("5240.00"), LLAVE, USUARIO, IP);
 
             assertThat(resultado.repetida()).isTrue();
-            verify(registroPrestamo, never()).registrar(any(), any(), any(), any());
+            verify(registroPrestamo, never()).registrar(any(), any(), any(), any(), any());
         }
 
         @Test

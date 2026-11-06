@@ -49,7 +49,7 @@ class ClienteControllerTest {
 
     @Test
     void actualizaYRespondeElCliente() throws Exception {
-        when(clienteService.actualizarCliente(eq(7), any(ActualizarClienteRequest.class))).thenReturn(
+        when(clienteService.actualizarCliente(eq(7), any(ActualizarClienteRequest.class), eq("user"))).thenReturn(
                 ClienteResponse.builder().idCliente(7).nombreCompleto("JUAN CORDOVA CORDOVA")
                         .curp("CORJ101020MTCPRR06").build());
 
@@ -88,7 +88,7 @@ class ClienteControllerTest {
 
     @Test
     void curpDeOtroClienteResponde409() throws Exception {
-        when(clienteService.actualizarCliente(eq(7), any(ActualizarClienteRequest.class)))
+        when(clienteService.actualizarCliente(eq(7), any(ActualizarClienteRequest.class), eq("user")))
                 .thenThrow(ApiException.conflicto("Ya existe otro cliente registrado con esta CURP."));
 
         mockMvc.perform(put(URL).contentType(MediaType.APPLICATION_JSON).content(CUERPO).with(jwt()))
@@ -102,5 +102,32 @@ class ClienteControllerTest {
         mockMvc.perform(put(URL).contentType(MediaType.APPLICATION_JSON).content(CUERPO))
                 .andExpect(status().isUnauthorized());
         verifyNoInteractions(clienteService);
+    }
+
+    @Test
+    void bajaYReactivarRespondenElClienteConSuEstatus() throws Exception {
+        when(clienteService.darDeBaja(7, "user")).thenReturn(
+                ClienteResponse.builder().idCliente(7).estatusCliente("INACTIVO").build());
+        when(clienteService.reactivar(7, "user")).thenReturn(
+                ClienteResponse.builder().idCliente(7).estatusCliente("ACTIVO").build());
+
+        mockMvc.perform(put("/operaciones-cliente/cliente-baja/7").with(jwt()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.mensaje").value("Cliente dado de baja."))
+                .andExpect(jsonPath("$.objetoResponse.estatusCliente").value("INACTIVO"));
+        mockMvc.perform(put("/operaciones-cliente/cliente-reactivar/7").with(jwt()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.mensaje").value("Cliente reactivado."))
+                .andExpect(jsonPath("$.objetoResponse.estatusCliente").value("ACTIVO"));
+    }
+
+    @Test
+    void bajaConPrestamosActivosResponde409() throws Exception {
+        when(clienteService.darDeBaja(7, "user")).thenThrow(ApiException.conflicto(
+                "El cliente tiene préstamos activos. Liquídalos o cancélalos antes de darlo de baja."));
+
+        mockMvc.perform(put("/operaciones-cliente/cliente-baja/7").with(jwt()))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.httpStatus").value("CONFLICT"));
     }
 }

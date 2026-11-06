@@ -1,5 +1,6 @@
 package com.crediexpress.controller;
 
+import com.crediexpress.config.security.UsuarioAutenticado;
 import com.crediexpress.dto.view.request.ActualizarClienteRequest;
 import com.crediexpress.dto.view.request.ClienteRequest;
 import com.crediexpress.dto.view.response.ClienteResponse;
@@ -9,6 +10,8 @@ import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.lang.NonNull;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -39,14 +42,15 @@ public class ClienteController {
 
     @PostMapping("/cliente-agregar")
     public ResponseEntity<GenericResponse> agregarCliente(
-            @RequestBody(required = true) @NonNull ClienteRequest clienteRequest) {
+            @RequestBody(required = true) @NonNull ClienteRequest clienteRequest,
+            @AuthenticationPrincipal Jwt token) {
         if(clienteService.validarRequest(clienteRequest)) {
             return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(GenericResponse.builder()
                             .mensaje("Enviar los campos requeridos.")
                             .httpStatus(HttpStatus.BAD_REQUEST)
                     .build());
         }
-        ClienteResponse response = clienteService.guardarCliente(clienteRequest);
+        ClienteResponse response = clienteService.guardarCliente(clienteRequest, UsuarioAutenticado.de(token));
         return ResponseEntity.status(HttpStatus.OK).body(GenericResponse.builder()
                         .objetoResponse(response)
                         .httpStatus(HttpStatus.OK)
@@ -55,11 +59,35 @@ public class ClienteController {
 
     @PutMapping("/cliente-actualizar/{idCliente}")
     public ResponseEntity<GenericResponse> actualizarCliente(
-            @PathVariable Integer idCliente, @Valid @RequestBody ActualizarClienteRequest request) {
-        ClienteResponse response = clienteService.actualizarCliente(idCliente, request);
+            @PathVariable Integer idCliente, @Valid @RequestBody ActualizarClienteRequest request,
+            @AuthenticationPrincipal Jwt token) {
+        ClienteResponse response = clienteService.actualizarCliente(idCliente, request, UsuarioAutenticado.de(token));
         return ResponseEntity.ok(GenericResponse.builder()
                 .objetoResponse(response)
                 .mensaje("Cliente actualizado.")
+                .httpStatus(HttpStatus.OK)
+                .build());
+    }
+
+    /** Baja lógica: el cliente no se borra. 409 si tiene préstamos activos. */
+    @PutMapping("/cliente-baja/{idCliente}")
+    public ResponseEntity<GenericResponse> darDeBaja(@PathVariable Integer idCliente,
+                                                     @AuthenticationPrincipal Jwt token) {
+        ClienteResponse response = clienteService.darDeBaja(idCliente, UsuarioAutenticado.de(token));
+        return ResponseEntity.ok(GenericResponse.builder()
+                .objetoResponse(response)
+                .mensaje("Cliente dado de baja.")
+                .httpStatus(HttpStatus.OK)
+                .build());
+    }
+
+    @PutMapping("/cliente-reactivar/{idCliente}")
+    public ResponseEntity<GenericResponse> reactivar(@PathVariable Integer idCliente,
+                                                     @AuthenticationPrincipal Jwt token) {
+        ClienteResponse response = clienteService.reactivar(idCliente, UsuarioAutenticado.de(token));
+        return ResponseEntity.ok(GenericResponse.builder()
+                .objetoResponse(response)
+                .mensaje("Cliente reactivado.")
                 .httpStatus(HttpStatus.OK)
                 .build());
     }
