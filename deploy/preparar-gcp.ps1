@@ -54,7 +54,7 @@ if ($facturacion -ne 'True') {
 Invoke-Paso 'Habilitar APIs' {
     gcloud services enable run.googleapis.com artifactregistry.googleapis.com compute.googleapis.com `
         secretmanager.googleapis.com iap.googleapis.com storage.googleapis.com `
-        identitytoolkit.googleapis.com firebasehosting.googleapis.com
+        identitytoolkit.googleapis.com firebasehosting.googleapis.com cloudbuild.googleapis.com
 }
 
 # --- Artifact Registry: solo 0.5 GB gratis, así que se conservan las 2 imágenes más recientes ---

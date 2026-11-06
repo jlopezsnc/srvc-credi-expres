@@ -44,6 +44,12 @@ dependencies {
 
 tasks.named('test') {
 	useJUnitPlatform()
+	// contextLoads arranca contra el MySQL local y Flyway lo migraría: deploy-back.ps1 lo salta con -PsinBd.
+	if (project.hasProperty('sinBd')) {
+		filter {
+			excludeTestsMatching '*BackEndServicesCrediExpressApplicationTests'
+		}
+	}
 }
 
 // Nombre fijo para el Dockerfile y sin el jar "plain", que no se usa.

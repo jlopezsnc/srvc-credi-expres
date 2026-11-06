@@ -35,8 +35,9 @@ regiones y sin IP externa; Cloud Run sin `min-instances` y sin "CPU siempre asig
 | Herramienta | Verificar |
 |---|---|
 | JDK 21 | `& "C:\Program Files\Java\jdk-21\bin\java" -version` |
-| Docker Desktop encendido | `docker info` |
 | Google Cloud CLI | `gcloud --version` (instalar de cloud.google.com/sdk) |
+
+No se necesita Docker: la imagen del back la arma Cloud Build en la nube (2,500 minutos gratis al mes).
 
 ## Paso 1. Variables
 
@@ -75,10 +76,11 @@ columnas `DATETIME` marcadas "En UTC" no dependen de esto.
 ## Paso 4. Back
 
 ```powershell
-.\deploy\deploy-back.ps1 -Version 0.1.0
+.\deploy\deploy-back.ps1 -Version 0.1.0 -JavaHome 'C:\Program Files\Java\jdk-21'
 ```
 
-Pruebas → imagen con CDS → push → `gcloud run deploy` → prueba de `/api/actuator/health` (que también
+Pruebas en tu equipo → Cloud Build arma y publica la imagen con CDS → `gcloud run deploy` →
+prueba de `/api/actuator/health` (que también
 revisa la conexión a MySQL). Si la revisión nueva no arranca, Cloud Run sigue sirviendo la anterior.
 
 ## Paso 5. Front

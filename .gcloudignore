@@ -1,0 +1,9 @@
+# Lo que sube deploy-back.ps1 a Cloud Build. Lista blanca: solo lo que usa el Dockerfile.
+# Así nunca se suben config/ (contraseñas locales), deploy/ (UIDs) ni build/.
+/*
+!/Dockerfile
+!/gradlew
+!/settings.gradle
+!/build.gradle
+!/gradle/
+!/src/

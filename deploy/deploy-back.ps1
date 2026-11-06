@@ -3,13 +3,18 @@
     Despliegue manual del back de Credi Express en Cloud Run (docs/DESPLIEGUE-GCP.md).
 
 .DESCRIPTION
-    1. Pruebas y build (./gradlew clean build). Si fallan, NO se despliega.
-    2. Imagen versionada (con CDS para arrancar más rápido) -> Artifact Registry.
+    1. Pruebas y build en tu equipo (./gradlew clean build -PsinBd: sin contextLoads, que usaría tu
+       MySQL local). Si fallan, NO se despliega.
+    2. Cloud Build arma la imagen en la nube con el Dockerfile (con CDS para arrancar más rápido) y la
+       sube a Artifact Registry. No necesitas Docker. Solo se sube lo que permite .gcloudignore
+       (Dockerfile, gradle y src): nunca config/ ni deploy/.
     3. gcloud run deploy. Cloud Run solo manda tráfico a la revisión nueva si arranca bien
        (Flyway aplica las migraciones pendientes al arrancar); si falla, sigue la anterior.
     4. Prueba /api/actuator/health en la URL del servicio.
 
     Costo: min-instances=0 (no cobra mientras nadie la usa) y max-instances=2 (tope de gasto).
+    Cloud Build: 2,500 minutos gratis al mes (cada despliegue usa ~5-10). El código se sube a un
+    bucket propio en la región gratuita que borra lo de más de 1 día.
 
 .EXAMPLE
     .\deploy\deploy-back.ps1 -Version 0.1.0
@@ -48,10 +53,56 @@ if ($invalidos.Count -gt 0) { throw "UIDs con formato raro en ${archivoUsuarios}
 $ipVm = gcloud compute addresses describe $n.IpVm --region=$($v.Region) --project=$($v.ProyectoGcp) --format='value(address)'
 if (-not $ipVm) { throw "No existe la IP $($n.IpVm). Corre primero .\deploy\preparar-gcp.ps1" }
 
-Invoke-Paso 'Pruebas y build' { .\gradlew.bat clean build }
-Invoke-Paso 'Construir imagen' { docker build -t $imagen . }
-Invoke-Paso 'Autorizar Docker con Artifact Registry' { gcloud auth configure-docker "$($v.Region)-docker.pkg.dev" --quiet }
-Invoke-Paso 'Publicar imagen' { docker push $imagen }
+Invoke-Paso 'Pruebas y build' { .\gradlew.bat clean build -PsinBd }
+
+# --- Cloud Build (la primera vez lo prepara; después solo lo confirma) ---
+$p = $v.ProyectoGcp
+$r = $v.Region
+Invoke-Paso 'Habilitar Cloud Build' { gcloud services enable cloudbuild.googleapis.com --project=$p }
+# Bucket propio en la región gratuita para subir el código: el de Cloud Build por omisión es
+# multirregional y no entra en la capa gratuita de Cloud Storage.
+$bucketFuentes = "gs://$p-cloudbuild-fuentes"
+if (-not (Test-Comando { gcloud storage buckets describe $bucketFuentes --project=$p })) {
+    Invoke-Paso "Crear bucket $bucketFuentes" {
+        gcloud storage buckets create $bucketFuentes --project=$p --location=$r --default-storage-class=STANDARD `
+            --uniform-bucket-level-access --public-access-prevention
+    }
+    $ciclo = [IO.Path]::GetTempFileName()
+    [IO.File]::WriteAllText($ciclo, '{ "rule": [ { "action": { "type": "Delete" }, "condition": { "age": 1 } } ] }')
+    try { Invoke-Paso 'Borrar el código subido de más de 1 día' { gcloud storage buckets update $bucketFuentes --lifecycle-file=$ciclo } }
+    finally { Remove-Item $ciclo -Force }
+}
+# Permisos mínimos de la cuenta con la que corre Cloud Build: leer el código, subir la imagen y
+# escribir logs. Repetirlos no cambia nada.
+# Recién habilitada la API puede tardar un par de minutos en responder: se reintenta.
+$saBuild = ''
+for ($intento = 1; $intento -le 12 -and -not $saBuild; $intento++) {
+    $anterior = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    try { $saBuild = [string] (gcloud builds get-default-service-account --project=$p --format='value(serviceAccountEmail)' 2>$null) }
+    finally { $ErrorActionPreference = $anterior }
+    $saBuild = $saBuild.Trim() -replace '^.*/', ''
+    if (-not $saBuild) { Write-Host '    Esperando a que Cloud Build esté listo...' -ForegroundColor DarkGray; Start-Sleep -Seconds 15 }
+}
+if (-not $saBuild) { throw 'No se pudo obtener la cuenta de servicio de Cloud Build. Espera unos minutos y vuelve a correr el script.' }
+Invoke-Paso "Permiso: Cloud Build lee el código ($saBuild)" {
+    gcloud storage buckets add-iam-policy-binding $bucketFuentes --member="serviceAccount:$saBuild" `
+        --role=roles/storage.objectViewer | Out-Null
+}
+Invoke-Paso 'Permiso: Cloud Build sube imágenes' {
+    gcloud artifacts repositories add-iam-policy-binding crediexpress --project=$p --location=$r `
+        --member="serviceAccount:$saBuild" --role=roles/artifactregistry.writer | Out-Null
+}
+Invoke-Paso 'Permiso: Cloud Build escribe logs' {
+    gcloud projects add-iam-policy-binding $p --member="serviceAccount:$saBuild" `
+        --role=roles/logging.logWriter --condition=None | Out-Null
+}
+
+# Solo se sube lo que permite .gcloudignore (Dockerfile, gradle y src).
+Invoke-Paso 'Construir y publicar imagen con Cloud Build' {
+    gcloud builds submit $raiz --project=$p --region=$r --tag=$imagen --timeout=30m `
+        --gcs-source-staging-dir="$bucketFuentes/fuentes"
+}
 
 $variablesEntorno = [ordered]@{
     SPRING_PROFILES_ACTIVE = 'cloudrun'
